@@ -4,17 +4,25 @@ import sqlite3
 import datetime
 import secrets
 import glob
+import time
+import hmac
 import aiohttp
 import paramiko
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Form, Request, HTTPException, Query, Response, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
 DB_FILE = "/app/data/monitor.db"
 
 # Session storage for web authentication (in-memory)
 ACTIVE_SESSIONS = set()
+
+# Login brute-force protection
+LOGIN_ATTEMPTS = {}  # ip -> {'count': int, 'locked_until': float}
+MAX_LOGIN_ATTEMPTS = 5
+LOCKOUT_SECONDS = 300  # 5 minutes
 
 ADMIN_PASSWORD = "DtMzN51NkYuDe4"
 
@@ -64,18 +72,22 @@ def init_db():
 
 def get_setting(key, default=""):
     conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT value FROM settings WHERE key=?", (key,))
-    row = c.fetchone()
-    conn.close()
-    return row["value"] if row else default
+    try:
+        c = conn.cursor()
+        c.execute("SELECT value FROM settings WHERE key=?", (key,))
+        row = c.fetchone()
+        return row["value"] if row else default
+    finally:
+        conn.close()
 
 def set_setting(key, value):
     conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=?", (key, value, value))
-    conn.commit()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=?", (key, value, value))
+        conn.commit()
+    finally:
+        conn.close()
 
 async def send_telegram(message):
     token = get_setting("telegram_bot_token")
@@ -110,6 +122,8 @@ async def icmp_worker():
             c = conn.cursor()
             c.execute("SELECT * FROM ping_targets")
             targets = c.fetchall()
+            conn.close()
+
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             for t in targets:
@@ -122,10 +136,13 @@ async def icmp_worker():
 
                 is_up = await ping_ip(ip)
 
+                conn_up = get_db()
+                c_up = conn_up.cursor()
+
                 if is_up:
                     if status == "DOWN":
                         await send_telegram(f"🟢 <b>[RECOVERED]</b> Host <b>{name}</b> ({ip}) está online novamente!")
-                    c.execute(
+                    c_up.execute(
                         "UPDATE ping_targets SET consecutive_failures=0, status='UP', last_check=?, alert_sent=0 WHERE id=?",
                         (now, target_id)
                     )
@@ -141,16 +158,17 @@ async def icmp_worker():
                             await send_telegram(f"🚨 <b>[ALERT - DOWN]</b> Host <b>{name}</b> ({ip}) sem resposta ICMP há 1 minuto!")
                             new_alert_sent = 1
 
-                    c.execute(
+                    c_up.execute(
                         "UPDATE ping_targets SET consecutive_failures=?, status=?, last_check=?, alert_sent=? WHERE id=?",
                         (new_failures, new_status, now, new_alert_sent, target_id)
                     )
-            conn.commit()
-            conn.close()
+                conn_up.commit()
+                conn_up.close()
         except Exception as e:
             print(f"[ICMP Worker Error] {e}")
 
         await asyncio.sleep(15)
+
 
 def cleanup_old_backups(clean_name, ip, keep=7):
     try:
@@ -179,7 +197,6 @@ def backup_mikrotik_ssh(clean_name, ip, port, username, password, filename):
         
         remote_file_name = f"backup_{filename}"
         ssh.exec_command(f"/export file={remote_file_name}")
-        import time
         time.sleep(3)
 
         sftp = ssh.open_sftp()
@@ -265,7 +282,20 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(mikrotik_worker())
     yield
 
-app = FastAPI(title="MeuProvedor Monitor & Backup", lifespan=lifespan)
+app = FastAPI(title="MeuProvedor Monitor & Backup", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+# Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 def is_authenticated(session_token: str) -> bool:
     return session_token in ACTIVE_SESSIONS if session_token else False
@@ -303,14 +333,33 @@ async def login_page(error: str = None):
     """
 
 @app.post("/login")
-async def login_submit(password: str = Form(...)):
-    if password == ADMIN_PASSWORD:
+async def login_submit(request: Request, password: str = Form(...)):
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Check brute-force lockout
+    if client_ip in LOGIN_ATTEMPTS:
+        attempt_info = LOGIN_ATTEMPTS[client_ip]
+        if attempt_info['count'] >= MAX_LOGIN_ATTEMPTS and time.time() < attempt_info['locked_until']:
+            remaining = int(attempt_info['locked_until'] - time.time())
+            return RedirectResponse(url=f"/login?error=Muitas+tentativas.+Aguarde+{remaining}+segundos.", status_code=303)
+        if time.time() >= attempt_info.get('locked_until', 0):
+            LOGIN_ATTEMPTS[client_ip] = {'count': 0, 'locked_until': 0}
+    
+    if hmac.compare_digest(password, ADMIN_PASSWORD):
+        # Reset failed attempts on success
+        LOGIN_ATTEMPTS.pop(client_ip, None)
         token = secrets.token_hex(32)
         ACTIVE_SESSIONS.add(token)
         response = RedirectResponse(url="/", status_code=303)
-        response.set_cookie(key="session_token", value=token, httponly=True, samesite="lax")
+        response.set_cookie(key="session_token", value=token, httponly=True, samesite="lax", secure=True)
         return response
     else:
+        # Track failed attempts
+        if client_ip not in LOGIN_ATTEMPTS:
+            LOGIN_ATTEMPTS[client_ip] = {'count': 0, 'locked_until': 0}
+        LOGIN_ATTEMPTS[client_ip]['count'] += 1
+        if LOGIN_ATTEMPTS[client_ip]['count'] >= MAX_LOGIN_ATTEMPTS:
+            LOGIN_ATTEMPTS[client_ip]['locked_until'] = time.time() + LOCKOUT_SECONDS
         return RedirectResponse(url="/login?error=Senha+Incorreta!", status_code=303)
 
 @app.get("/logout")
@@ -540,10 +589,12 @@ async def add_target(name: str = Form(...), ip: str = Form(...), session_token: 
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
     conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT INTO ping_targets (name, ip) VALUES (?, ?)", (name.strip(), ip.strip()))
-    conn.commit()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO ping_targets (name, ip) VALUES (?, ?)", (name.strip(), ip.strip()))
+        conn.commit()
+    finally:
+        conn.close()
     return RedirectResponse(url="/", status_code=303)
 
 @app.get("/target/delete/{target_id}")
@@ -551,10 +602,12 @@ async def delete_target(target_id: int, session_token: str = Cookie(None)):
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
     conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM ping_targets WHERE id=?", (target_id,))
-    conn.commit()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM ping_targets WHERE id=?", (target_id,))
+        conn.commit()
+    finally:
+        conn.close()
     return RedirectResponse(url="/", status_code=303)
 
 @app.post("/mikrotik/add")
@@ -562,23 +615,26 @@ async def add_mikrotik(name: str = Form(...), ip: str = Form(...), port: int = F
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
     conn = get_db()
-    c = conn.cursor()
-    c.execute("INSERT INTO mikrotik_devices (name, ip, port, username, password) VALUES (?, ?, ?, ?, ?)",
-              (name.strip(), ip.strip(), port, username.strip(), password.strip()))
-    conn.commit()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("INSERT INTO mikrotik_devices (name, ip, port, username, password) VALUES (?, ?, ?, ?, ?)",
+                  (name.strip(), ip.strip(), port, username.strip(), password.strip()))
+        conn.commit()
+    finally:
+        conn.close()
     return RedirectResponse(url="/", status_code=303)
 
 @app.get("/mikrotik/delete/{device_id}")
 async def delete_mikrotik(device_id: int, session_token: str = Cookie(None)):
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
-        
     conn = get_db()
-    c = conn.cursor()
-    c.execute("DELETE FROM mikrotik_devices WHERE id=?", (device_id,))
-    conn.commit()
-    conn.close()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM mikrotik_devices WHERE id=?", (device_id,))
+        conn.commit()
+    finally:
+        conn.close()
     return RedirectResponse(url="/", status_code=303)
 
 
@@ -588,16 +644,19 @@ async def download_backup(filename: str = Query(...), password: str = Query(...)
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
         
-    if password != ADMIN_PASSWORD:
-        return RedirectResponse(url="/?msg=Senha+de+autorização+incorreta!", status_code=303)
+    if not hmac.compare_digest(password, ADMIN_PASSWORD):
+        return RedirectResponse(url="/", status_code=303)
     
     safe_filename = os.path.basename(filename)
+    # Prevent path traversal
+    if ".." in safe_filename or "/" in safe_filename:
+        raise HTTPException(status_code=400, detail="Nome de arquivo inválido")
     file_path = os.path.join("/app/backups", safe_filename)
     
     if not os.path.exists(file_path):
-        return RedirectResponse(url="/?msg=Arquivo+de+backup+não+encontrado!", status_code=303)
+        raise HTTPException(status_code=404, detail="Arquivo de backup não encontrado")
         
-    return FileResponse(file_path, filename=safe_filename, media_type="text/plain")
+    return FileResponse(file_path, filename=safe_filename, media_type="application/octet-stream")
 
 
 @app.get("/mikrotik/backup-now/{device_id}")
