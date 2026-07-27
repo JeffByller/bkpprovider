@@ -10,7 +10,9 @@ services:
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups
+      - ./main.py:/app/main.py
       - /etc/localtime:/etc/localtime:ro
+
     cap_add:
       - NET_RAW
     deploy:
@@ -30,10 +32,9 @@ services:
       - "4443:443"
     volumes:
       - /etc/localtime:/etc/localtime:ro
-      - ./nginx/ssl:/etc/nginx/ssl
-      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - monitor
+
     deploy:
       resources:
         limits:

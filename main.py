@@ -19,9 +19,11 @@ ACTIVE_SESSIONS = set()
 ADMIN_PASSWORD = "DtMzN51NkYuDe4"
 
 def get_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
     return conn
+
 
 def init_db():
     os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
@@ -209,6 +211,7 @@ async def run_all_backups():
         c = conn.cursor()
         c.execute("SELECT * FROM mikrotik_devices")
         devices = c.fetchall()
+        conn.close()
 
         for dev in devices:
             dev_id = dev["id"]
@@ -228,17 +231,20 @@ async def run_all_backups():
             )
 
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn_up = get_db()
+            c_up = conn_up.cursor()
             if success:
-                status_text = "SUCCESS"
-                c.execute("UPDATE mikrotik_devices SET last_backup=?, last_status=? WHERE id=?", (now, status_text, dev_id))
+                c_up.execute("UPDATE mikrotik_devices SET last_backup=?, last_status=? WHERE id=?", (now, "SUCCESS", dev_id))
+                await send_telegram(f"✅ <b>[Backup Automático]</b>\nDispositivo: <b>{name}</b> ({ip})\nBackup realizado com sucesso!")
             else:
-                status_text = f"FAILED: {msg}"
-                c.execute("UPDATE mikrotik_devices SET last_status=? WHERE id=?", (status_text, dev_id))
-        
-        conn.commit()
-        conn.close()
+                c_up.execute("UPDATE mikrotik_devices SET last_status=? WHERE id=?", (f"FAILED: {msg}", dev_id))
+                await send_telegram(f"❌ <b>[Falha no Backup Automático]</b>\nDispositivo: <b>{name}</b> ({ip})\nErro: <code>{msg}</code>")
+            conn_up.commit()
+            conn_up.close()
     except Exception as e:
         print(f"[Mikrotik Backup Error] {e}")
+
+
 
 async def mikrotik_worker():
     while True:
@@ -343,7 +349,7 @@ async def home(request: Request, session_token: str = Cookie(None)):
             <td>{badge}</td>
             <td>{t['consecutive_failures']}</td>
             <td>{t['last_check'] or '-'}</td>
-            <td><a href="/target/delete/{t['id']}" style="color: red;">Remover</a></td>
+            <td><a href="/target/delete/{t['id']}" onclick="return confirm('Tem certeza que deseja remover este IP?');" style="color: red; font-weight: bold;">Remover</a></td>
         </tr>
         """
 
@@ -366,7 +372,7 @@ async def home(request: Request, session_token: str = Cookie(None)):
             <select id="file_{d['id']}" style="padding: 4px; margin-right: 5px;">
                 {file_options}
             </select>
-            <button onclick="downloadBackup({d['id']})" style="padding: 4px 8px; background-color: #17a2b8;">Baixar</button>
+            <button type="button" onclick="downloadBackup({d['id']})" style="padding: 4px 8px; background-color: #17a2b8;">Baixar</button>
             """
         else:
             download_html = "<span style='color: #888;'>Nenhum backup</span>"
@@ -383,8 +389,8 @@ async def home(request: Request, session_token: str = Cookie(None)):
                 {download_html}
             </td>
             <td>
-                <a href="/mikrotik/backup-now/{d['id']}" style="color: blue; margin-right: 8px;">Backup Agora</a>
-                <a href="/mikrotik/delete/{d['id']}" style="color: red;">Remover</a>
+                <button type="button" onclick="triggerBackup({d['id']}, '{clean_name}')" style="background-color: #007bff; padding: 4px 8px; border: none; border-radius: 4px; color: white; cursor: pointer; margin-right: 8px;">Backup Agora</button>
+                <a href="/mikrotik/delete/{d['id']}" onclick="return confirm('Tem certeza que deseja remover este dispositivo?');" style="color: red; font-weight: bold;">Remover</a>
             </td>
         </tr>
         """
@@ -420,8 +426,12 @@ async def home(request: Request, session_token: str = Cookie(None)):
                     window.location.href = "/mikrotik/download?filename=" + encodeURIComponent(filename) + "&password=" + encodeURIComponent(password);
                 }}
             }}
+            function triggerBackup(devId, devName) {{
+                window.location.href = "/mikrotik/backup-now/" + devId;
+            }}
         </script>
     </head>
+
     <body>
         <div class="header">
             <h1>📡 MeuProvedor - Painel de Controle</h1>
@@ -563,6 +573,7 @@ async def add_mikrotik(name: str = Form(...), ip: str = Form(...), port: int = F
 async def delete_mikrotik(device_id: int, session_token: str = Cookie(None)):
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
+        
     conn = get_db()
     c = conn.cursor()
     c.execute("DELETE FROM mikrotik_devices WHERE id=?", (device_id,))
@@ -570,19 +581,21 @@ async def delete_mikrotik(device_id: int, session_token: str = Cookie(None)):
     conn.close()
     return RedirectResponse(url="/", status_code=303)
 
+
+
 @app.get("/mikrotik/download")
 async def download_backup(filename: str = Query(...), password: str = Query(...), session_token: str = Cookie(None)):
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
         
     if password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Senha de autorização incorreta!")
+        return RedirectResponse(url="/?msg=Senha+de+autorização+incorreta!", status_code=303)
     
     safe_filename = os.path.basename(filename)
     file_path = os.path.join("/app/backups", safe_filename)
     
     if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Arquivo de backup não encontrado!")
+        return RedirectResponse(url="/?msg=Arquivo+de+backup+não+encontrado!", status_code=303)
         
     return FileResponse(file_path, filename=safe_filename, media_type="text/plain")
 
@@ -591,11 +604,14 @@ async def download_backup(filename: str = Query(...), password: str = Query(...)
 async def backup_now(device_id: int, session_token: str = Cookie(None)):
     if not is_authenticated(session_token):
         raise HTTPException(status_code=401, detail="Não autorizado")
+        
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT * FROM mikrotik_devices WHERE id=?", (device_id,))
     dev = c.fetchone()
+    conn.close()
 
+    result_msg = "Dispositivo não encontrado."
     if dev:
         date_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         clean_name = "".join(x for x in dev["name"] if x.isalnum() or x in ('_', '-'))
@@ -606,13 +622,22 @@ async def backup_now(device_id: int, session_token: str = Cookie(None)):
             None, backup_mikrotik_ssh, clean_name, dev["ip"], dev["port"], dev["username"], dev["password"], filename
         )
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        conn_update = get_db()
+        c_up = conn_update.cursor()
         if success:
-            c.execute("UPDATE mikrotik_devices SET last_backup=?, last_status='SUCCESS' WHERE id=?", (now, device_id))
+            c_up.execute("UPDATE mikrotik_devices SET last_backup=?, last_status='SUCCESS' WHERE id=?", (now, device_id))
+            await send_telegram(f"✅ <b>[Backup Manual]</b>\nDispositivo: <b>{dev['name']}</b> ({dev['ip']})\nBackup manual executado com sucesso!")
         else:
-            c.execute("UPDATE mikrotik_devices SET last_status=? WHERE id=?", (f"FAILED: {msg}", device_id))
-        conn.commit()
-    conn.close()
+            c_up.execute("UPDATE mikrotik_devices SET last_status=? WHERE id=?", (f"FAILED: {msg}", device_id))
+            await send_telegram(f"❌ <b>[Falha no Backup Manual]</b>\nDispositivo: <b>{dev['name']}</b> ({dev['ip']})\nErro: <code>{msg}</code>")
+        conn_update.commit()
+        conn_update.close()
+        
     return RedirectResponse(url="/", status_code=303)
+
+
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -75,13 +75,16 @@ sudo certbot certonly --standalone -d bkp.jeffgsan.com.br
 
 Os certificados serão salvos no servidor em `/etc/letsencrypt/live/bkp.jeffgsan.com.br/`.
 
-### 3. Ajustar o Nginx para usar o certificado oficial:
-Abra o arquivo `nginx/default.conf` do projeto:
-```bash
-nano nginx/default.conf
+### 3. Ajustar o Nginx e o Docker Compose para usar o certificado oficial:
+
+1. No arquivo `docker-compose.yml`, adicione o volume do Let's Encrypt no serviço `nginx`:
+```yaml
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
 ```
 
-Altere a seção SSL de:
+2. No arquivo `nginx/default.conf`, altere a seção SSL de:
 ```nginx
 ssl_certificate /etc/nginx/ssl/selfsigned.crt;
 ssl_certificate_key /etc/nginx/ssl/selfsigned.key;
@@ -93,10 +96,11 @@ ssl_certificate /etc/letsencrypt/live/bkp.jeffgsan.com.br/fullchain.pem;
 ssl_certificate_key /etc/letsencrypt/live/bkp.jeffgsan.com.br/privkey.pem;
 ```
 
-### 4. Reiniciar o Nginx:
+### 4. Recriar o container do Nginx:
 ```bash
-sudo docker compose restart nginx
+sudo docker compose up -d --build nginx
 ```
+
 
 ---
 
