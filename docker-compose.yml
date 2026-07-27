@@ -1,0 +1,43 @@
+services:
+  monitor:
+    build: .
+    container_name: meuprovedor_monitor
+    restart: always
+    environment:
+      - TZ=America/Recife
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+      - /etc/localtime:/etc/localtime:ro
+    cap_add:
+      - NET_RAW
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+
+  nginx:
+    build: ./nginx
+    container_name: meuprovedor_nginx
+    restart: always
+    environment:
+      - TZ=America/Recife
+    ports:
+      - "8080:80"
+      - "4443:443"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./nginx/ssl:/etc/nginx/ssl
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - monitor
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+
+

@@ -1,0 +1,14 @@
+# Ignorar banco de dados local com dados e senhas
+data/
+
+# Ignorar backups salvos localmente
+backups/
+
+# Ignorar certificados autoassinados gerados localmente
+nginx/ssl/*.crt
+nginx/ssl/*.key
+
+# Ignorar arquivos temporarios do Python / sistema
+__pycache__/
+*.pyc
+.DS_Store
