@@ -51,9 +51,15 @@ def init_db():
             consecutive_failures INTEGER DEFAULT 0,
             status TEXT DEFAULT 'UP',
             last_check TIMESTAMP,
-            alert_sent INTEGER DEFAULT 0
+            alert_sent INTEGER DEFAULT 0,
+            active INTEGER DEFAULT 1
         )
     """)
+    # Migration: add 'active' column if missing (existing databases)
+    try:
+        cursor.execute("ALTER TABLE ping_targets ADD COLUMN active INTEGER DEFAULT 1")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS mikrotik_devices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120,7 +126,7 @@ async def icmp_worker():
         try:
             conn = get_db()
             c = conn.cursor()
-            c.execute("SELECT * FROM ping_targets")
+            c.execute("SELECT * FROM ping_targets WHERE active=1")
             targets = c.fetchall()
             conn.close()
 
@@ -389,16 +395,27 @@ async def home(request: Request, session_token: str = Cookie(None)):
 
     targets_rows = ""
     for t in targets:
-        badge = "<span style='color: green; font-weight: bold;'>UP</span>" if t["status"] == "UP" else "<span style='color: red; font-weight: bold;'>DOWN</span>"
+        is_active = t["active"] if "active" in t.keys() else 1
+        if is_active:
+            badge = "<span style='color: green; font-weight: bold;'>UP</span>" if t["status"] == "UP" else "<span style='color: red; font-weight: bold;'>DOWN</span>"
+        else:
+            badge = "<span style='color: #999; font-weight: bold;'>INATIVO</span>"
+        row_style = "opacity: 0.5;" if not is_active else ""
+        toggle_label = "Inativar" if is_active else "Ativar"
+        toggle_color = "#ffc107" if is_active else "#28a745"
         targets_rows += f"""
-        <tr>
+        <tr style="{row_style}">
             <td>{t['id']}</td>
             <td>{t['name']}</td>
             <td>{t['ip']}</td>
             <td>{badge}</td>
             <td>{t['consecutive_failures']}</td>
             <td>{t['last_check'] or '-'}</td>
-            <td><a href="/target/delete/{t['id']}" onclick="return confirm('Tem certeza que deseja remover este IP?');" style="color: red; font-weight: bold;">Remover</a></td>
+            <td>
+                <a href="/target/edit/{t['id']}" style="color: #007bff; font-weight: bold; margin-right: 8px;">Editar</a>
+                <a href="/target/toggle/{t['id']}" style="color: {toggle_color}; font-weight: bold; margin-right: 8px;">{toggle_label}</a>
+                <a href="/target/delete/{t['id']}" onclick="return confirm('Tem certeza que deseja remover este IP?');" style="color: red; font-weight: bold;">Remover</a>
+            </td>
         </tr>
         """
 
@@ -605,6 +622,87 @@ async def delete_target(target_id: int, session_token: str = Cookie(None)):
     try:
         c = conn.cursor()
         c.execute("DELETE FROM ping_targets WHERE id=?", (target_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return RedirectResponse(url="/", status_code=303)
+
+@app.get("/target/toggle/{target_id}")
+async def toggle_target(target_id: int, session_token: str = Cookie(None)):
+    if not is_authenticated(session_token):
+        raise HTTPException(status_code=401, detail="Não autorizado")
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT active FROM ping_targets WHERE id=?", (target_id,))
+        row = c.fetchone()
+        if row:
+            new_active = 0 if row["active"] else 1
+            c.execute("UPDATE ping_targets SET active=?, consecutive_failures=0, alert_sent=0 WHERE id=?", (new_active, target_id))
+            if not new_active:
+                c.execute("UPDATE ping_targets SET status='UP' WHERE id=?", (target_id,))
+            conn.commit()
+    finally:
+        conn.close()
+    return RedirectResponse(url="/", status_code=303)
+
+@app.get("/target/edit/{target_id}", response_class=HTMLResponse)
+async def edit_target_page(target_id: int, session_token: str = Cookie(None)):
+    if not is_authenticated(session_token):
+        raise HTTPException(status_code=401, detail="Não autorizado")
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT * FROM ping_targets WHERE id=?", (target_id,))
+        t = c.fetchone()
+    finally:
+        conn.close()
+    if not t:
+        return RedirectResponse(url="/", status_code=303)
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Editar Target - MeuProvedor</title>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; background-color: #1a1a2e; color: #fff; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+            .box {{ background: #16213e; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 380px; }}
+            h2 {{ text-align: center; color: #00fff5; margin-bottom: 20px; }}
+            label {{ display: block; margin-top: 12px; color: #ccc; font-weight: bold; }}
+            input[type=text] {{ width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #0f3460; border-radius: 5px; background: #0f3460; color: #fff; box-sizing: border-box; }}
+            .btn {{ display: inline-block; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold; margin: 5px; border: none; cursor: pointer; }}
+            .btn-primary {{ background-color: #007bff; color: white; }}
+            .btn-secondary {{ background-color: #6c757d; color: white; }}
+            .actions {{ text-align: center; margin-top: 20px; }}
+        </style>
+    </head>
+    <body>
+        <div class="box">
+            <h2>✏️ Editar Target ICMP</h2>
+            <form action="/target/edit/{target_id}" method="post">
+                <label>Nome:</label>
+                <input type="text" name="name" value="{t['name']}" required>
+                <label>IP:</label>
+                <input type="text" name="ip" value="{t['ip']}" required>
+                <div class="actions">
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="/" class="btn btn-secondary">Cancelar</a>
+                </div>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.post("/target/edit/{target_id}")
+async def edit_target_submit(target_id: int, name: str = Form(...), ip: str = Form(...), session_token: str = Cookie(None)):
+    if not is_authenticated(session_token):
+        raise HTTPException(status_code=401, detail="Não autorizado")
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.execute("UPDATE ping_targets SET name=?, ip=? WHERE id=?", (name.strip(), ip.strip(), target_id))
         conn.commit()
     finally:
         conn.close()
