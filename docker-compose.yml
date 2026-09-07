@@ -5,12 +5,16 @@ services:
     restart: always
     environment:
       - TZ=America/Recife
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-@Jeff2712}
     expose:
       - "8000"
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups
       - ./main.py:/app/main.py
+      - ./app:/app/app
+      - ./templates:/app/templates
+      - ./static:/app/static
       - /etc/localtime:/etc/localtime:ro
 
     cap_add:
@@ -19,7 +23,9 @@ services:
       resources:
         limits:
           cpus: '0.50'
-          memory: 128M
+          memory: 256M
+    networks:
+      - default
 
   nginx:
     build: ./nginx
@@ -28,7 +34,7 @@ services:
     environment:
       - TZ=America/Recife
     ports:
-      - "8080:80"
+      - "8081:80"
       - "4443:443"
     volumes:
       - /etc/localtime:/etc/localtime:ro
@@ -40,5 +46,14 @@ services:
         limits:
           cpus: '0.50'
           memory: 128M
+    networks:
+      - default
+      - web_net
+
+networks:
+  default:
+  web_net:
+    external: true
+
 
 

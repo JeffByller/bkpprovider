@@ -3,4 +3,5 @@ uvicorn
 aiohttp
 paramiko
 python-multipart
+jinja2
 

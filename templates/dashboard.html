@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <title>MeuProvedor - Painel de Controle</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="header">
+        <h1>MeuProvedor - Painel de Controle</h1>
+        <a href="/logout" class="btn btn-danger">Sair</a>
+    </div>
+
+    <nav class="tabs">
+        <button class="tab-btn active" data-tab="tab-dashboard">Dashboard</button>
+        <button class="tab-btn" data-tab="tab-monitoramento">Monitoramento</button>
+        <button class="tab-btn" data-tab="tab-backups">Backups</button>
+        <button class="tab-btn" data-tab="tab-config">Configurações</button>
+    </nav>
+
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard" class="tab-content active">
+        <div class="card-grid" id="summary-cards">
+            <div class="stat-card">
+                <span class="stat-label">Hosts monitorados</span>
+                <span class="stat-value" id="stat-targets-total">-</span>
+            </div>
+            <div class="stat-card stat-up">
+                <span class="stat-label">Hosts UP</span>
+                <span class="stat-value" id="stat-targets-up">-</span>
+            </div>
+            <div class="stat-card stat-down">
+                <span class="stat-label">Hosts DOWN</span>
+                <span class="stat-value" id="stat-targets-down">-</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Latência média</span>
+                <span class="stat-value" id="stat-avg-latency">-</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Dispositivos Mikrotik</span>
+                <span class="stat-value" id="stat-devices-total">-</span>
+            </div>
+            <div class="stat-card stat-up">
+                <span class="stat-label">Backups OK hoje</span>
+                <span class="stat-value" id="stat-backups-ok">-</span>
+            </div>
+            <div class="stat-card stat-down">
+                <span class="stat-label">Backups com falha hoje</span>
+                <span class="stat-value" id="stat-backups-failed">-</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- MONITORAMENTO -->
+    <section id="tab-monitoramento" class="tab-content">
+        <div class="card">
+            <div class="card-header">
+                <h2>Monitoramento ICMP (Ping)</h2>
+                <button class="btn btn-primary" onclick="openTargetModal()">Novo IP</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>IP</th>
+                            <th>Status</th>
+                            <th>Latência</th>
+                            <th>Média</th>
+                            <th>Perda</th>
+                            <th>Histórico</th>
+                            <th>Última checagem</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="targets-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- BACKUPS -->
+    <section id="tab-backups" class="tab-content">
+        <div class="card">
+            <div class="card-header">
+                <h2>Backup Mikrotik (v6 / v7)</h2>
+                <button class="btn btn-primary" onclick="openDeviceModal()">Novo Mikrotik</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>IP:Porta</th>
+                            <th>Usuário</th>
+                            <th>Último backup</th>
+                            <th>Status</th>
+                            <th>Arquivos</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="devices-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- CONFIGURAÇÕES -->
+    <section id="tab-config" class="tab-content">
+        <div class="card">
+            <h2>Telegram</h2>
+            <form id="telegram-form" class="grid">
+                <div class="form-group">
+                    <label>Bot Token</label>
+                    <input type="text" name="telegram_bot_token" placeholder="Ex: 123456789:ABCdef...">
+                </div>
+                <div class="form-group">
+                    <label>Chat ID do grupo</label>
+                    <input type="text" name="telegram_chat_id" placeholder="Ex: -100123456789">
+                </div>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Monitoramento</h2>
+            <form id="monitoring-form" class="grid">
+                <div class="form-group">
+                    <label>Intervalo entre checagens (segundos)</label>
+                    <input type="number" name="ping_interval_seconds" min="5">
+                </div>
+                <div class="form-group">
+                    <label>Falhas consecutivas para considerar DOWN</label>
+                    <input type="number" name="fail_threshold" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Janela para % de perda (nº de amostras)</label>
+                    <input type="number" name="packet_loss_window" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Limite de perda de pacotes (%) para alerta</label>
+                    <input type="number" name="packet_loss_threshold_pct" min="0" max="100">
+                </div>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Backup Mikrotik</h2>
+            <form id="backup-form" class="grid">
+                <div class="form-group">
+                    <label>Hora do backup automático (0-23)</label>
+                    <input type="number" name="backup_hour" min="0" max="23">
+                </div>
+                <div class="form-group">
+                    <label>Minuto do backup automático (0-59)</label>
+                    <input type="number" name="backup_minute" min="0" max="59">
+                </div>
+                <div class="form-group">
+                    <label>Backups a manter por dispositivo</label>
+                    <input type="number" name="backup_retention" min="1">
+                </div>
+            </form>
+        </div>
+
+        <div class="card">
+            <button class="btn btn-primary" onclick="saveAllSettings()">Salvar configurações</button>
+            <span id="settings-saved-msg" class="saved-msg" hidden>Salvo!</span>
+        </div>
+    </section>
+
+    <!-- MODAL: Target (add/edit) -->
+    <div id="target-modal" class="modal-overlay" hidden>
+        <div class="modal">
+            <h3 id="target-modal-title">Novo IP para monitorar</h3>
+            <form id="target-form">
+                <input type="hidden" name="id">
+                <label>Nome do dispositivo/local</label>
+                <input type="text" name="name" required>
+                <label>IP para ping</label>
+                <input type="text" name="ip" required>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('target-modal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Mikrotik Device (add/edit) -->
+    <div id="device-modal" class="modal-overlay" hidden>
+        <div class="modal">
+            <h3 id="device-modal-title">Novo Mikrotik</h3>
+            <form id="device-form">
+                <input type="hidden" name="id">
+                <label>Nome da RB</label>
+                <input type="text" name="name" required>
+                <label>IP da RB</label>
+                <input type="text" name="ip" required>
+                <label>Porta SSH</label>
+                <input type="number" name="port" value="22" required>
+                <label>Usuário</label>
+                <input type="text" name="username" required>
+                <label id="device-password-label">Senha</label>
+                <input type="password" name="password" autocomplete="new-password">
+                <small id="device-password-hint" class="hint" hidden>Deixe em branco para manter a senha atual.</small>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('device-modal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
