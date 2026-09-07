@@ -1,8 +1,13 @@
 # Ignorar banco de dados local com dados e senhas
 data/
+*.db
+*.sqlite3
 
 # Ignorar backups salvos localmente
 backups/
+
+# Ignorar variaveis de ambiente locais com senhas
+.env
 
 # Ignorar certificados autoassinados gerados localmente
 nginx/ssl/*.crt
@@ -12,3 +17,4 @@ nginx/ssl/*.key
 __pycache__/
 *.pyc
 .DS_Store
+*.log
