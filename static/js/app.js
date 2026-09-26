@@ -31,7 +31,7 @@ function initTabs() {
 function switchTab(tabId) {
     document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tabId));
     document.querySelectorAll(".tab-content").forEach(s => s.classList.toggle("active", s.id === tabId));
-    try { localStorage.setItem("meuprovedor_tab", tabId); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("bkpprovider_tab", tabId); } catch (e) { /* ignore */ }
 }
 
 // ---------- Modal helpers ----------
@@ -348,7 +348,7 @@ async function refreshAll() {
 document.addEventListener("DOMContentLoaded", async () => {
     initTabs();
     try {
-        const savedTab = localStorage.getItem("meuprovedor_tab");
+        const savedTab = localStorage.getItem("bkpprovider_tab") || localStorage.getItem("meuprovedor_tab");
         if (savedTab && document.getElementById(savedTab)) switchTab(savedTab);
     } catch (e) { /* ignore */ }
 

@@ -1,7 +1,7 @@
 services:
   monitor:
     build: .
-    container_name: meuprovedor_monitor
+    container_name: bkpprovider_monitor
     restart: always
     environment:
       - TZ=America/Recife
@@ -29,7 +29,7 @@ services:
 
   nginx:
     build: ./nginx
-    container_name: meuprovedor_nginx
+    container_name: bkpprovider_nginx
     restart: always
     environment:
       - TZ=America/Recife

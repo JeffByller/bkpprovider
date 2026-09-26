@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -19,7 +20,12 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="MeuProvedor Monitor & Backup", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(title="BKPProvider Monitor & Backup", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
+async def favicon():
+    return FileResponse("static/favicon.ico")
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):

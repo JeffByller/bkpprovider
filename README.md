@@ -1,4 +1,4 @@
-# MeuProvedor - Sistema de Monitoramento e Backup MikroTik
+# BKPProvider - Sistema de Monitoramento e Backup MikroTik
 
 Aplicação web em FastAPI para monitoramento contínuo de conectividade (Ping/ICMP) com notificações em tempo real via Telegram e automação de backups dinâmicos para roteadores MikroTik.
 

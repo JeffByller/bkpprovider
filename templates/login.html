@@ -1,14 +1,22 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <title>Login - MeuProvedor</title>
+    <title>bkp</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body class="login-body">
     <div class="login-box">
-        <h2>MeuProvedor</h2>
+        <div style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px;">
+            <img src="/static/favicon.svg" alt="bkp" style="width: 36px; height: 36px; border-radius: 8px;">
+            <h2 style="margin: 0;">BKPProvider</h2>
+        </div>
         <p class="login-subtitle">Acesso ao painel de controle</p>
         {% if error %}
         <div class="error-msg">{{ error }}</div>

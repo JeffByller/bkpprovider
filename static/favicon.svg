@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b1329"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+  </defs>
+  <!-- Background with subtle cyan border -->
+  <rect x="1.5" y="1.5" width="61" height="61" rx="14" fill="url(#bg)" stroke="#38bdf8" stroke-width="2.5"/>
+  <!-- Circular Backup / Sync Arrow -->
+  <path d="M 32 8 A 20.5 20.5 0 1 1 15 42" fill="none" stroke="url(#cyan)" stroke-width="5.5" stroke-linecap="round"/>
+  <polygon points="32,1.5 32,14.5 42,8" fill="#38bdf8"/>
+  <!-- Server Blade 1 -->
+  <rect x="19" y="19" width="23" height="7" rx="2.5" fill="#f8fafc"/>
+  <circle cx="37.5" cy="22.5" r="1.6" fill="#22c55e"/>
+  <!-- Server Blade 2 -->
+  <rect x="19" y="28.5" width="23" height="7" rx="2.5" fill="#f8fafc"/>
+  <circle cx="37.5" cy="32" r="1.6" fill="#38bdf8"/>
+  <!-- Server Blade 3 -->
+  <rect x="19" y="38" width="23" height="7" rx="2.5" fill="#f8fafc"/>
+  <circle cx="37.5" cy="41.5" r="1.6" fill="#eab308"/>
+</svg>
