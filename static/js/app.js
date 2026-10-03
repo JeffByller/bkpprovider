@@ -52,7 +52,7 @@ document.addEventListener("keydown", (e) => {
     }
 });
 
-document.addEventListener("click", (e) => {
+document.addEventListener("mousedown", (e) => {
     if (e.target.classList.contains("modal-overlay")) {
         e.target.hidden = true;
     }
