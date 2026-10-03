@@ -22,6 +22,7 @@
 
     <nav class="tabs">
         <button class="tab-btn active" data-tab="tab-dashboard">Dashboard</button>
+        <button class="tab-btn" data-tab="tab-licencas">Licenças</button>
         <button class="tab-btn" data-tab="tab-monitoramento">Monitoramento</button>
         <button class="tab-btn" data-tab="tab-backups">Backups</button>
         <button class="tab-btn" data-tab="tab-config">Configurações</button>
@@ -30,6 +31,22 @@
     <!-- DASHBOARD -->
     <section id="tab-dashboard" class="tab-content active">
         <div class="card-grid" id="summary-cards">
+            <div class="stat-card">
+                <span class="stat-label">Total de Licenças</span>
+                <span class="stat-value" id="stat-licenses-total">-</span>
+            </div>
+            <div class="stat-card stat-up">
+                <span class="stat-label">Licenças Ativas</span>
+                <span class="stat-value" id="stat-licenses-active">-</span>
+            </div>
+            <div class="stat-card stat-down">
+                <span class="stat-label">Licenças Bloqueadas</span>
+                <span class="stat-value" id="stat-licenses-blocked">-</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Checagens de Licença Hoje</span>
+                <span class="stat-value" id="stat-licenses-checks">-</span>
+            </div>
             <div class="stat-card">
                 <span class="stat-label">Hosts monitorados</span>
                 <span class="stat-value" id="stat-targets-total">-</span>
@@ -57,6 +74,43 @@
             <div class="stat-card stat-down">
                 <span class="stat-label">Backups com falha hoje</span>
                 <span class="stat-value" id="stat-backups-failed">-</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- LICENÇAS -->
+    <section id="tab-licencas" class="tab-content">
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <h2>Gerenciamento de Licenças</h2>
+                    <p style="margin: 4px 0 0 0; color: #666; font-size: 13px;">
+                        Servidor de ativação e validação para clientes externos (Endpoint: <code>https://bkp.jeffgsan.com.br/api/license/verify</code>)
+                    </p>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-info" onclick="refreshLicenses()">Atualizar</button>
+                    <button class="btn btn-primary" onclick="openLicenseModal()">+ Nova Licença</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cliente / Aplicação</th>
+                            <th>Chave da Licença</th>
+                            <th>Status</th>
+                            <th>Expiração</th>
+                            <th>Domínio Permitido</th>
+                            <th>Última Comunicação</th>
+                            <th>Total Checagens</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="licenses-tbody">
+                        <tr><td colspan="8" style="text-align: center; color: #888;">Carregando licenças...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </section>
@@ -217,6 +271,103 @@
                     <button type="submit" class="btn btn-primary">Salvar</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Licença (Criar / Editar) -->
+    <div id="license-modal" class="modal-overlay" hidden>
+        <div class="modal" style="width: 480px;">
+            <h3 id="license-modal-title">Nova Licença</h3>
+            <form id="license-form" style="margin-top: 15px;">
+                <input type="hidden" name="id">
+                
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 4px;">Cliente / Aplicação *</label>
+                    <input type="text" name="client_name" required placeholder="Ex: Cliente Alfa - App Web" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 4px;">Chave da Licença</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="text" name="license_key" id="license-key-input" placeholder="BKP-XXXX-XXXX-XXXX-XXXX" style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 13px;">
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="generateRandomKeyToInput()" style="margin: 0;">Gerar Chave</button>
+                    </div>
+                    <small style="color: #666; font-size: 12px;">Deixe em branco ao criar para auto-gerar.</small>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 4px;">Status</label>
+                    <select name="status" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="ACTIVE">Ativa (Acesso Liberado)</option>
+                        <option value="BLOCKED">Bloqueada (Acesso Negado)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <label style="font-weight: bold; margin: 0;">Data de Expiração</label>
+                        <label style="font-size: 12px; font-weight: normal; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                            <input type="checkbox" id="license-lifetime-checkbox" onchange="toggleLifetime(this.checked)"> Vitalícia (sem expiração)
+                        </label>
+                    </div>
+                    <input type="date" name="expires_at" id="license-expires-input" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 12px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 4px;">Domínio / Host Permitido (Opcional)</label>
+                    <input type="text" name="allowed_domain" placeholder="Ex: app.cliente.com.br (vazio = qualquer domínio)" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                </div>
+
+                <div class="form-group" style="margin-bottom: 15px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 4px;">Observações / Notas (Opcional)</label>
+                    <textarea name="notes" rows="2" placeholder="Contato, plano, observações..." style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; resize: vertical;"></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('license-modal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Licença</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Histórico de Comunicações da Licença -->
+    <div id="license-logs-modal" class="modal-overlay" hidden>
+        <div class="modal modal-wide" style="width: 850px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+                <div>
+                    <h3 id="license-logs-title" style="margin: 0 0 4px 0;">Últimas Comunicações</h3>
+                    <div id="license-logs-subtitle" style="font-size: 13px; color: #666;"></div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button type="button" class="btn btn-info btn-sm" onclick="refreshLicenseLogs()">Atualizar</button>
+                    <button type="button" class="btn btn-danger btn-sm" onclick="clearCurrentLicenseLogs()">Limpar Histórico</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('license-logs-modal')">Fechar</button>
+                </div>
+            </div>
+
+            <div style="overflow-y: auto; flex: 1; max-height: 60vh; border: 1px solid #e0e0e0; border-radius: 4px;">
+                <table style="margin-top: 0; min-width: 100%;">
+                    <thead>
+                        <tr style="position: sticky; top: 0; background: #007bff; z-index: 2;">
+                            <th style="padding: 8px;">Data / Hora</th>
+                            <th style="padding: 8px;">IP Origem</th>
+                            <th style="padding: 8px;">Hostname / Domínio</th>
+                            <th style="padding: 8px;">Versão</th>
+                            <th style="padding: 8px;">Status</th>
+                            <th style="padding: 8px;">Mensagem / Resposta</th>
+                        </tr>
+                    </thead>
+                    <tbody id="license-logs-tbody">
+                        <tr><td colspan="6" style="text-align: center; color: #888;">Carregando histórico...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 12px; color: #777;">
+                <span id="license-logs-count">Mostrando últimos registros</span>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('license-logs-modal')">Fechar</button>
+            </div>
         </div>
     </div>
 

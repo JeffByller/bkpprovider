@@ -282,6 +282,279 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
+// ---------- License Management ----------
+
+let currentLicenseLogsId = null;
+
+async function refreshLicenses() {
+    const tbody = document.getElementById("licenses-tbody");
+    if (!tbody) return;
+    try {
+        const licenses = await apiGet("/api/licenses");
+        if (licenses.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #888; padding: 20px;">Nenhuma licença cadastrada. Clique em "+ Nova Licença" para começar.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = licenses.map(lic => {
+            let statusBadge = "";
+            if (lic.effective_status === "ACTIVE") {
+                statusBadge = '<span class="badge-active">Ativa</span>';
+            } else if (lic.effective_status === "BLOCKED") {
+                statusBadge = '<span class="badge-blocked">Bloqueada</span>';
+            } else if (lic.effective_status === "EXPIRED") {
+                statusBadge = '<span class="badge-expired">Expirada</span>';
+            }
+
+            const expiresDisplay = lic.expires_at 
+                ? escapeHtml(lic.expires_at.split("T")[0]) 
+                : '<span style="color:#28a745; font-weight:bold;">Vitalícia</span>';
+
+            const domainDisplay = lic.allowed_domain 
+                ? `<code style="font-size:12px;">${escapeHtml(lic.allowed_domain)}</code>` 
+                : '<span style="color:#777; font-size:12px;">Qualquer</span>';
+
+            let lastSeenDisplay = '<span style="color:#999; font-size:12px;">Nunca comunicou</span>';
+            if (lic.last_check_at) {
+                const subDetails = [lic.last_ip, lic.last_version ? `v${lic.last_version}` : null, lic.last_hostname].filter(Boolean).join(" • ");
+                lastSeenDisplay = `
+                    <div style="font-weight: 500;">${escapeHtml(lic.last_check_relative)}</div>
+                    <small style="color: #666; font-size: 11px;">${escapeHtml(subDetails)}</small>
+                `;
+            }
+
+            const isBlocked = lic.status === "BLOCKED";
+            const toggleBtnText = isBlocked ? "Desbloquear" : "Bloquear";
+            const toggleBtnClass = isBlocked ? "btn-warning" : "btn-secondary";
+
+            return `
+                <tr class="${isBlocked ? 'row-inactive' : ''}">
+                    <td>
+                        <strong style="color: #007bff;">${escapeHtml(lic.client_name)}</strong>
+                        ${lic.notes ? `<div style="font-size: 11px; color: #666;">${escapeHtml(lic.notes)}</div>` : ''}
+                    </td>
+                    <td>
+                        <span class="license-key-tag">
+                            <span>${escapeHtml(lic.license_key)}</span>
+                            <button type="button" class="btn-copy" onclick="copyLicenseKey('${escapeHtml(lic.license_key)}', this)" title="Copiar Chave">Copiar</button>
+                        </span>
+                    </td>
+                    <td>${statusBadge}</td>
+                    <td>${expiresDisplay}</td>
+                    <td>${domainDisplay}</td>
+                    <td>${lastSeenDisplay}</td>
+                    <td style="text-align: center; font-weight: bold;">${lic.total_checks}</td>
+                    <td class="actions-cell">
+                        <button class="btn btn-info btn-sm" onclick="openLicenseLogsModal(${lic.id}, '${escapeHtml(lic.client_name)}', '${escapeHtml(lic.license_key)}')">Logs</button>
+                        <button class="btn ${toggleBtnClass} btn-sm" onclick="toggleLicenseStatus(${lic.id})">${toggleBtnText}</button>
+                        <button class="btn btn-primary btn-sm" onclick='openLicenseModal(${JSON.stringify(lic)})'>Editar</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteLicense(${lic.id}, '${escapeHtml(lic.client_name)}')">Remover</button>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        console.error("Erro ao carregar licenças:", err);
+    }
+}
+
+function openLicenseModal(lic = null) {
+    const form = document.getElementById("license-form");
+    form.reset();
+    
+    if (lic) {
+        document.getElementById("license-modal-title").textContent = "Editar Licença";
+        form.id.value = lic.id;
+        form.client_name.value = lic.client_name;
+        form.license_key.value = lic.license_key;
+        form.status.value = lic.status;
+        form.allowed_domain.value = lic.allowed_domain || "";
+        form.notes.value = lic.notes || "";
+
+        if (lic.expires_at) {
+            form.expires_at.value = lic.expires_at.split("T")[0];
+            document.getElementById("license-lifetime-checkbox").checked = false;
+            form.expires_at.disabled = false;
+        } else {
+            form.expires_at.value = "";
+            document.getElementById("license-lifetime-checkbox").checked = true;
+            form.expires_at.disabled = true;
+        }
+    } else {
+        document.getElementById("license-modal-title").textContent = "Nova Licença";
+        form.id.value = "";
+        form.status.value = "ACTIVE";
+        document.getElementById("license-lifetime-checkbox").checked = true;
+        form.expires_at.disabled = true;
+        generateRandomKeyToInput();
+    }
+    openModal("license-modal");
+}
+
+function toggleLifetime(isLifetime) {
+    const expiresInput = document.getElementById("license-expires-input");
+    expiresInput.disabled = isLifetime;
+    if (isLifetime) expiresInput.value = "";
+}
+
+async function generateRandomKeyToInput() {
+    try {
+        const res = await apiGet("/api/licenses/generate-key");
+        if (res && res.license_key) {
+            document.getElementById("license-key-input").value = res.license_key;
+        }
+    } catch (e) {
+        console.error("Falha ao gerar chave:", e);
+    }
+}
+
+async function copyLicenseKey(text, btn) {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+        } else {
+            const input = document.createElement("input");
+            input.value = text;
+            document.body.appendChild(input);
+            input.select();
+            document.execCommand("copy");
+            document.body.removeChild(input);
+        }
+        const oldText = btn.textContent;
+        btn.textContent = "Copiado!";
+        btn.style.backgroundColor = "#28a745";
+        btn.style.color = "#fff";
+        setTimeout(() => {
+            btn.textContent = oldText;
+            btn.style.backgroundColor = "";
+            btn.style.color = "";
+        }, 1500);
+    } catch (err) {
+        alert("Chave: " + text);
+    }
+}
+
+async function toggleLicenseStatus(id) {
+    try {
+        await apiPost(`/api/licenses/${id}/toggle`);
+        refreshLicenses();
+        refreshSummary();
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+async function deleteLicense(id, name) {
+    if (!confirm(`Remover permanentemente a licença de "${name}"? Todo o histórico de conexões será apagado.`)) return;
+    try {
+        await apiDelete(`/api/licenses/${id}`);
+        refreshLicenses();
+        refreshSummary();
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+async function openLicenseLogsModal(licenseId, clientName, licenseKey) {
+    currentLicenseLogsId = licenseId;
+    document.getElementById("license-logs-title").textContent = `Comunicações: ${clientName}`;
+    document.getElementById("license-logs-subtitle").textContent = `Chave: ${licenseKey}`;
+    openModal("license-logs-modal");
+    await refreshLicenseLogs();
+}
+
+async function refreshLicenseLogs() {
+    if (!currentLicenseLogsId) return;
+    const tbody = document.getElementById("license-logs-tbody");
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #888; padding: 15px;">Atualizando comunicações...</td></tr>`;
+    
+    try {
+        const data = await apiGet(`/api/licenses/${currentLicenseLogsId}/logs`);
+        const logs = data.logs || [];
+        document.getElementById("license-logs-count").textContent = `Total: ${logs.length} registro(s) recente(s)`;
+
+        if (logs.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #888; padding: 20px;">Nenhuma comunicação registrada para esta licença até o momento.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = logs.map(l => {
+            let statusBadge = `<span class="badge-inactive">${escapeHtml(l.status_returned)}</span>`;
+            if (l.status_returned === "ACTIVE") {
+                statusBadge = `<span class="badge-active">ACTIVE (OK)</span>`;
+            } else if (l.status_returned === "BLOCKED") {
+                statusBadge = `<span class="badge-blocked">BLOCKED</span>`;
+            } else if (l.status_returned === "EXPIRED") {
+                statusBadge = `<span class="badge-expired">EXPIRED</span>`;
+            } else if (l.status_returned === "DOMAIN_MISMATCH") {
+                statusBadge = `<span class="badge-blocked">DOMÍNIO INVÁLIDO</span>`;
+            }
+
+            return `
+                <tr>
+                    <td style="white-space: nowrap;">
+                        <div>${escapeHtml(l.timestamp)}</div>
+                        <small style="color: #777;">(${escapeHtml(l.relative_time)})</small>
+                    </td>
+                    <td><code>${escapeHtml(l.ip)}</code></td>
+                    <td>${escapeHtml(l.hostname)}</td>
+                    <td>${escapeHtml(l.app_version)}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <div>${escapeHtml(l.message)}</div>
+                        ${l.details ? `<small style="color: #666; font-size: 11px;">${escapeHtml(l.details)}</small>` : ''}
+                    </td>
+                </tr>
+            `;
+        }).join("");
+    } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #dc3545;">Erro ao obter histórico: ${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+async function clearCurrentLicenseLogs() {
+    if (!currentLicenseLogsId) return;
+    if (!confirm("Limpar todo o histórico de comunicações desta licença?")) return;
+    try {
+        await apiDelete(`/api/licenses/${currentLicenseLogsId}/logs`);
+        await refreshLicenseLogs();
+        refreshLicenses();
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const form = document.getElementById("license-form");
+    if (!form) return;
+    form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const id = form.id.value;
+        const isLifetime = document.getElementById("license-lifetime-checkbox").checked;
+        const body = {
+            client_name: form.client_name.value.trim(),
+            license_key: form.license_key.value.trim().toUpperCase(),
+            status: form.status.value,
+            expires_at: isLifetime ? null : form.expires_at.value,
+            allowed_domain: form.allowed_domain.value.trim().toLowerCase(),
+            notes: form.notes.value.trim(),
+        };
+
+        try {
+            if (id) {
+                await apiPut(`/api/licenses/${id}`, body);
+            } else {
+                await apiPost("/api/licenses", body);
+            }
+            closeModal("license-modal");
+            refreshLicenses();
+            refreshSummary();
+        } catch (err) {
+            alert(err.message);
+        }
+    });
+});
+
 // ---------- Dashboard summary ----------
 
 async function refreshSummary() {
@@ -293,6 +566,13 @@ async function refreshSummary() {
     document.getElementById("stat-devices-total").textContent = s.devices_total;
     document.getElementById("stat-backups-ok").textContent = s.backups_ok_today;
     document.getElementById("stat-backups-failed").textContent = s.backups_failed_today;
+
+    if (document.getElementById("stat-licenses-total")) {
+        document.getElementById("stat-licenses-total").textContent = s.licenses_total ?? 0;
+        document.getElementById("stat-licenses-active").textContent = s.licenses_active ?? 0;
+        document.getElementById("stat-licenses-blocked").textContent = s.licenses_blocked ?? 0;
+        document.getElementById("stat-licenses-checks").textContent = s.license_checks_today ?? 0;
+    }
 }
 
 // ---------- Settings ----------
@@ -342,7 +622,7 @@ function escapeHtml(str) {
 let pollTimer = null;
 
 async function refreshAll() {
-    await Promise.all([refreshTargets(), refreshDevices(), refreshSummary()]);
+    await Promise.all([refreshLicenses(), refreshTargets(), refreshDevices(), refreshSummary()]);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {

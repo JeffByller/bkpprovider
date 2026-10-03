@@ -61,6 +61,49 @@ def init_db():
     _migrate_column(cursor, "ping_targets", "packet_loss_pct", "REAL DEFAULT 0")
     _migrate_column(cursor, "ping_targets", "loss_alert_sent", "INTEGER DEFAULT 0")
 
+    # License management tables
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS licenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_name TEXT NOT NULL,
+            license_key TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'ACTIVE',
+            allowed_domain TEXT DEFAULT '',
+            expires_at TIMESTAMP,
+            notes TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_check_at TIMESTAMP,
+            last_ip TEXT,
+            last_hostname TEXT,
+            last_version TEXT,
+            total_checks INTEGER DEFAULT 0
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS license_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_id INTEGER DEFAULT 0,
+            license_key TEXT NOT NULL,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ip TEXT,
+            hostname TEXT,
+            app_version TEXT,
+            status_returned TEXT NOT NULL,
+            message TEXT,
+            details TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_licenses_key ON licenses(license_key)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_license_logs_license_id ON license_logs(license_id, id DESC)")
+
+    _migrate_column(cursor, "licenses", "allowed_domain", "TEXT DEFAULT ''")
+    _migrate_column(cursor, "licenses", "notes", "TEXT DEFAULT ''")
+    _migrate_column(cursor, "licenses", "last_check_at", "TIMESTAMP")
+    _migrate_column(cursor, "licenses", "last_ip", "TEXT")
+    _migrate_column(cursor, "licenses", "last_hostname", "TEXT")
+    _migrate_column(cursor, "licenses", "last_version", "TEXT")
+    _migrate_column(cursor, "licenses", "total_checks", "INTEGER DEFAULT 0")
+
     conn.commit()
     conn.close()
 

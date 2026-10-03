@@ -6,10 +6,21 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.db import init_db
 from app.mikrotik import mikrotik_worker
 from app.monitor import icmp_worker
-from app.routes import auth_routes, devices_api, pages, settings_api, summary_api, targets_api
+from app.routes import (
+    auth_routes,
+    devices_api,
+    license_admin_api,
+    license_public_api,
+    pages,
+    settings_api,
+    summary_api,
+    targets_api,
+)
 
 
 @asynccontextmanager
@@ -21,6 +32,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="BKPProvider Monitor & Backup", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
@@ -50,3 +68,5 @@ app.include_router(devices_api.router)
 app.include_router(devices_api.download_router)
 app.include_router(settings_api.router)
 app.include_router(summary_api.router)
+app.include_router(license_public_api.router)
+app.include_router(license_admin_api.router)
