@@ -101,7 +101,7 @@
                             <th>Chave da Licença</th>
                             <th>Status</th>
                             <th>Expiração</th>
-                            <th>Domínio Permitido</th>
+                            <th>Domínio / Rede IP (ASN)</th>
                             <th>Última Comunicação</th>
                             <th>Total Checagens</th>
                             <th>Ações</th>
@@ -314,8 +314,9 @@
                 </div>
 
                 <div class="form-group" style="margin-bottom: 12px;">
-                    <label style="display: block; font-weight: bold; margin-bottom: 4px;">Domínio / Host Permitido (Opcional)</label>
-                    <input type="text" name="allowed_domain" placeholder="Ex: app.cliente.com.br (vazio = qualquer domínio)" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                    <label style="display: block; font-weight: bold; margin-bottom: 4px;">Domínio / Rede IP / Bloco ASN Permitido (Opcional)</label>
+                    <input type="text" name="allowed_domain" placeholder="Ex: 45.160.0.0/22, 177.100.0.0/21 ou app.provedor.com.br" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                    <small style="color: #666; font-size: 12px; display: block; margin-top: 3px;">Permite domínios ou blocos de IPs/CIDR (ex: bloco ASN do provedor). Separe múltiplos por vírgula.</small>
                 </div>
 
                 <div class="form-group" style="margin-bottom: 15px;">

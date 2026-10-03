@@ -483,11 +483,15 @@ async function refreshLicenseLogs() {
             if (l.status_returned === "ACTIVE") {
                 statusBadge = `<span class="badge-active">ACTIVE (OK)</span>`;
             } else if (l.status_returned === "BLOCKED") {
-                statusBadge = `<span class="badge-blocked">BLOCKED</span>`;
+                statusBadge = `<span class="badge-blocked">BLOQUEADA</span>`;
             } else if (l.status_returned === "EXPIRED") {
-                statusBadge = `<span class="badge-expired">EXPIRED</span>`;
+                statusBadge = `<span class="badge-expired">EXPIRADA</span>`;
+            } else if (l.status_returned === "IP_NOT_ALLOWED") {
+                statusBadge = `<span class="badge-blocked">IP/ASN NÃO PERMITIDO</span>`;
             } else if (l.status_returned === "DOMAIN_MISMATCH") {
                 statusBadge = `<span class="badge-blocked">DOMÍNIO INVÁLIDO</span>`;
+            } else if (l.status_returned === "ORIGIN_MISMATCH") {
+                statusBadge = `<span class="badge-blocked">ORIGEM NÃO AUTORIZADA</span>`;
             }
 
             return `

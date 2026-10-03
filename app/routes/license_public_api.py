@@ -6,9 +6,9 @@ from fastapi import APIRouter, Header, Query, Request
 
 from app.db import get_db
 from app.license import (
-    check_domain_allowed,
     extract_client_ip,
     is_license_expired,
+    validate_license_origin,
 )
 
 router = APIRouter(prefix="/api/license")
@@ -187,19 +187,20 @@ async def _handle_verify(request: Request, raw_key: Optional[str] = None, payloa
                 "server_time": now_str,
             }
 
-        # 3. Check allowed domain
-        if allowed_domain and not check_domain_allowed(allowed_domain, hostname):
+        # 3. Check allowed domain / IP networks (ASN blocks)
+        is_origin_valid, origin_status, origin_reason = validate_license_origin(allowed_domain, hostname, client_ip)
+        if not is_origin_valid:
             _update_license_last_seen(conn, license_id, client_ip, hostname, app_version)
             _record_log(
                 conn, license_id, db_key, client_ip, hostname, app_version,
-                "DOMAIN_MISMATCH", f"Domínio '{hostname}' não autorizado.", details_json
+                origin_status, origin_reason, details_json
             )
             return {
                 "valid": False,
-                "status": "DOMAIN_MISMATCH",
+                "status": origin_status,
                 "client_name": client_name,
                 "license_key": db_key,
-                "message": f"Domínio '{hostname or 'desconhecido'}' não autorizado para esta licença.",
+                "message": origin_reason,
                 "server_time": now_str,
             }
 
