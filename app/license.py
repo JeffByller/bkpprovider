@@ -198,3 +198,48 @@ def format_relative_time(timestamp_str: str | None) -> str:
         return dt.strftime("%d/%m/%Y")
     except Exception:
         return str(timestamp_str)
+
+
+class LicenseStreamManager:
+    """Manages real-time SSE stream connections to client applications."""
+
+    def __init__(self):
+        import asyncio
+        from typing import Dict, Set
+        self._listeners: Dict[str, Set[asyncio.Queue]] = {}
+
+    def subscribe(self, license_key: str):
+        import asyncio
+        key = license_key.strip().upper()
+        if key not in self._listeners:
+            self._listeners[key] = set()
+        queue = asyncio.Queue()
+        self._listeners[key].add(queue)
+        return queue
+
+    def unsubscribe(self, license_key: str, queue):
+        key = license_key.strip().upper()
+        if key in self._listeners:
+            self._listeners[key].discard(queue)
+            if not self._listeners[key]:
+                del self._listeners[key]
+
+    async def broadcast(self, license_key: str, data: dict):
+        key = license_key.strip().upper()
+        if key in self._listeners:
+            for q in list(self._listeners[key]):
+                try:
+                    await q.put(data)
+                except Exception:
+                    pass
+
+    def is_online(self, license_key: str) -> bool:
+        key = license_key.strip().upper()
+        return key in self._listeners and len(self._listeners[key]) > 0
+
+    def get_online_keys(self) -> set:
+        return {k for k, queues in self._listeners.items() if len(queues) > 0}
+
+
+stream_manager = LicenseStreamManager()
+

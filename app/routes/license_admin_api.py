@@ -7,6 +7,7 @@ from app.license import (
     format_relative_time,
     generate_license_key,
     is_license_expired,
+    stream_manager,
 )
 
 router = APIRouter(prefix="/api/licenses", dependencies=[Depends(require_auth)])
@@ -22,6 +23,8 @@ def _license_snapshot(row) -> dict:
     else:
         effective_status = "ACTIVE"
 
+    is_online = stream_manager.is_online(row["license_key"])
+
     return {
         "id": row["id"],
         "client_name": row["client_name"],
@@ -29,6 +32,7 @@ def _license_snapshot(row) -> dict:
         "status": raw_status,
         "effective_status": effective_status,
         "is_expired": expired,
+        "is_online": is_online,
         "allowed_domain": row["allowed_domain"] or "",
         "expires_at": row["expires_at"] or "",
         "notes": row["notes"] or "",
@@ -152,6 +156,20 @@ async def update_license(license_id: int, payload: dict = Body(...)):
             (client_name, license_key, status, allowed_domain, expires_at, notes, license_id),
         )
         conn.commit()
+
+        # Instant real-time push to connected clients
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        await stream_manager.broadcast(
+            license_key,
+            {
+                "event": status,
+                "status": status,
+                "valid": status == "ACTIVE",
+                "client_name": client_name,
+                "message": f"Status atualizado para {status}.",
+                "server_time": now_str,
+            },
+        )
         return {"ok": True}
     finally:
         conn.close()
@@ -185,6 +203,20 @@ async def toggle_license_status(license_id: int):
             (license_id, lic["license_key"], now_str, new_status, action_msg),
         )
         conn.commit()
+
+        # Instant real-time push to connected clients!
+        await stream_manager.broadcast(
+            lic["license_key"],
+            {
+                "event": new_status,
+                "status": new_status,
+                "valid": new_status == "ACTIVE",
+                "client_name": lic["client_name"],
+                "message": action_msg,
+                "server_time": now_str,
+            },
+        )
+
         return {"ok": True, "new_status": new_status, "client_name": lic["client_name"]}
     finally:
         conn.close()

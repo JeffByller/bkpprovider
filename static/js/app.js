@@ -331,6 +331,7 @@ async function refreshLicenses() {
                 <tr class="${isBlocked ? 'row-inactive' : ''}">
                     <td>
                         <strong style="color: #007bff;">${escapeHtml(lic.client_name)}</strong>
+                        ${lic.is_online ? '<span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; font-size:10px; margin-left:6px;" title="Aplicação conectada em tempo real">● Ao Vivo</span>' : ''}
                         ${lic.notes ? `<div style="font-size: 11px; color: #666;">${escapeHtml(lic.notes)}</div>` : ''}
                     </td>
                     <td>

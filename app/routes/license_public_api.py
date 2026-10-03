@@ -1,13 +1,16 @@
+import asyncio
 import datetime
 import json
 from typing import Optional
 
-from fastapi import APIRouter, Header, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from app.db import get_db
 from app.license import (
     extract_client_ip,
     is_license_expired,
+    stream_manager,
     validate_license_origin,
 )
 
@@ -249,3 +252,83 @@ async def license_heartbeat(request: Request):
     except Exception:
         pass
     return await _handle_verify(request, payload=payload)
+
+
+@router.get("/stream")
+async def license_stream(request: Request, key: Optional[str] = Query(None)):
+    """
+    Real-time Server-Sent Events (SSE) stream for instant license status updates.
+    The client connects once and receives immediate push events (within milliseconds)
+    the moment the administrator changes or blocks the license.
+    """
+    raw_key = key or request.headers.get("x-license-key")
+    if not raw_key:
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.lower().startswith("bearer "):
+            raw_key = auth_header[7:].strip()
+
+    if not raw_key:
+        raise HTTPException(status_code=400, detail="Chave de licença não fornecida.")
+
+    norm_key = str(raw_key).strip().upper()
+    client_ip = extract_client_ip(request)
+
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM licenses WHERE UPPER(license_key) = ?", (norm_key,))
+        lic = cursor.fetchone()
+        if not lic:
+            raise HTTPException(status_code=404, detail="Licença inexistente.")
+
+        is_origin_valid, origin_status, origin_reason = validate_license_origin(
+            lic["allowed_domain"], request.query_params.get("hostname"), client_ip
+        )
+        if not is_origin_valid:
+            raise HTTPException(status_code=403, detail=origin_reason)
+
+        license_id = lic["id"]
+        current_status = lic["status"] or "ACTIVE"
+        client_name = lic["client_name"]
+    finally:
+        conn.close()
+
+    queue = stream_manager.subscribe(norm_key)
+
+    async def event_generator():
+        try:
+            # 1. Send initial state immediately upon connecting
+            initial_event = {
+                "event": current_status,
+                "status": current_status,
+                "valid": current_status == "ACTIVE",
+                "client_name": client_name,
+                "message": "Conectado ao servidor de licenças em tempo real.",
+                "server_time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            yield f"data: {json.dumps(initial_event)}\n\n"
+
+            # 2. Wait for push events from server or send keep-alive
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    message = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(message)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        except asyncio.CancelledError:
+            pass
+        finally:
+            stream_manager.unsubscribe(norm_key, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
