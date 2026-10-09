@@ -65,8 +65,10 @@ function openTargetModal(target) {
     if (target) {
         form.name.value = target.name;
         form.ip.value = target.ip;
+        form.telegram_destination_id.value = target.telegram_destination_id || "";
         document.getElementById("target-modal-title").textContent = "Editar IP";
     } else {
+        form.telegram_destination_id.value = "";
         document.getElementById("target-modal-title").textContent = "Novo IP para monitorar";
     }
     openModal("target-modal");
@@ -181,7 +183,11 @@ document.addEventListener("DOMContentLoaded", () => {
     form.addEventListener("submit", async (e) => {
         e.preventDefault();
         const id = form.id.value;
-        const body = { name: form.name.value.trim(), ip: form.ip.value.trim() };
+        const body = { 
+            name: form.name.value.trim(), 
+            ip: form.ip.value.trim(),
+            telegram_destination_id: form.telegram_destination_id.value ? parseInt(form.telegram_destination_id.value) : null
+        };
         try {
             if (id) await apiPut(`/api/targets/${id}`, body);
             else await apiPost("/api/targets", body);
@@ -627,7 +633,7 @@ function escapeHtml(str) {
 let pollTimer = null;
 
 async function refreshAll() {
-    await Promise.all([refreshLicenses(), refreshTargets(), refreshDevices(), refreshSummary()]);
+    await Promise.all([refreshLicenses(), refreshDestinations(), refreshTargets(), refreshDevices(), refreshSummary()]);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -644,3 +650,71 @@ document.addEventListener("DOMContentLoaded", async () => {
     const intervalMs = Math.max(parseInt(settings.ping_interval_seconds, 10) || 15, 5) * 1000;
     pollTimer = setInterval(refreshAll, intervalMs);
 });
+
+
+// ---------- Telegram Destinations ----------
+let telegramDestinations = [];
+
+async function refreshDestinations() {
+    telegramDestinations = await apiGet("/api/telegram_destinations");
+    const tbody = document.getElementById("dests-tbody");
+    if (tbody) {
+        tbody.innerHTML = telegramDestinations.map(d => `
+            <tr>
+                <td>${escapeHtml(d.name)}</td>
+                <td>${escapeHtml(d.chat_id)}</td>
+                <td class="actions-cell">
+                    <button class="btn btn-primary btn-sm" onclick='openDestModal(${JSON.stringify(d)})'>Editar</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteDest(${d.id}, '${escapeHtml(d.name)}')">Remover</button>
+                </td>
+            </tr>
+        `).join("");
+    }
+    
+    // Update options in target-telegram-select
+    const select = document.getElementById("target-telegram-select");
+    if (select) {
+        const currentVal = select.value;
+        select.innerHTML = `<option value="">Padrão do Sistema</option>` + 
+            telegramDestinations.map(d => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join("");
+        select.value = currentVal;
+    }
+}
+
+function openDestModal(dest = null) {
+    const form = document.getElementById("dest-form");
+    form.reset();
+    document.getElementById("dest-modal-title").innerText = dest ? "Editar Destino" : "Novo Destino Telegram";
+    if (dest) {
+        form.id.value = dest.id;
+        form.name.value = dest.name;
+        form.token.value = dest.token;
+        form.chat_id.value = dest.chat_id;
+    } else {
+        form.id.value = "";
+    }
+    openModal("dest-modal");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    const form = document.getElementById("dest-form");
+    if (form) {
+        form.addEventListener("submit", async e => {
+            e.preventDefault();
+            const data = Object.fromEntries(new FormData(e.target).entries());
+            if (data.id) {
+                await apiPut(`/api/telegram_destinations/${data.id}`, data);
+            } else {
+                await apiPost("/api/telegram_destinations", data);
+            }
+            closeModal("dest-modal");
+            refreshDestinations();
+        });
+    }
+});
+
+async function deleteDest(id, name) {
+    if (!confirm(`Remover destino "${name}"? Isso removerá a associação de qualquer IP que o use.`)) return;
+    await apiDelete(`/api/telegram_destinations/${id}`);
+    refreshDestinations();
+}

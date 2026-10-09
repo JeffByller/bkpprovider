@@ -23,12 +23,13 @@ async def list_targets():
 async def create_target(payload: dict = Body(...)):
     name = (payload.get("name") or "").strip()
     ip = (payload.get("ip") or "").strip()
+    dest_id = payload.get("telegram_destination_id")
     if not name or not ip:
         raise HTTPException(status_code=400, detail="Nome e IP são obrigatórios")
     conn = get_db()
     try:
         c = conn.cursor()
-        c.execute("INSERT INTO ping_targets (name, ip) VALUES (?, ?)", (name, ip))
+        c.execute("INSERT INTO ping_targets (name, ip, telegram_destination_id) VALUES (?, ?, ?)", (name, ip, dest_id))
         conn.commit()
         new_id = c.lastrowid
     finally:
@@ -40,12 +41,13 @@ async def create_target(payload: dict = Body(...)):
 async def update_target(target_id: int, payload: dict = Body(...)):
     name = (payload.get("name") or "").strip()
     ip = (payload.get("ip") or "").strip()
+    dest_id = payload.get("telegram_destination_id")
     if not name or not ip:
         raise HTTPException(status_code=400, detail="Nome e IP são obrigatórios")
     conn = get_db()
     try:
         c = conn.cursor()
-        c.execute("UPDATE ping_targets SET name=?, ip=? WHERE id=?", (name, ip, target_id))
+        c.execute("UPDATE ping_targets SET name=?, ip=?, telegram_destination_id=? WHERE id=?", (name, ip, dest_id, target_id))
         conn.commit()
     finally:
         conn.close()

@@ -54,8 +54,18 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_destinations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            token TEXT NOT NULL,
+            chat_id TEXT NOT NULL
+        )
+    """)
+
     # Migrations for existing databases (columns added over time)
     _migrate_column(cursor, "ping_targets", "active", "INTEGER DEFAULT 1")
+    _migrate_column(cursor, "ping_targets", "telegram_destination_id", "INTEGER")
     _migrate_column(cursor, "ping_targets", "latency_ms", "REAL")
     _migrate_column(cursor, "ping_targets", "avg_latency_ms", "REAL")
     _migrate_column(cursor, "ping_targets", "packet_loss_pct", "REAL DEFAULT 0")

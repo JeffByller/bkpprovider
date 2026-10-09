@@ -172,7 +172,7 @@
     <!-- CONFIGURAÇÕES -->
     <section id="tab-config" class="tab-content">
         <div class="card">
-            <h2>Telegram</h2>
+            <h2>Telegram Padrão (Fallback)</h2>
             <form id="telegram-form" class="grid">
                 <div class="form-group">
                     <label>Bot Token</label>
@@ -183,6 +183,25 @@
                     <input type="text" name="telegram_chat_id" placeholder="Ex: -100123456789">
                 </div>
             </form>
+        </div>
+
+        <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h2 style="margin: 0;">Destinos Telegram</h2>
+                <button class="btn btn-primary" onclick="openDestModal()">Novo Destino</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Chat ID</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dests-tbody"></tbody>
+                </table>
+            </div>
         </div>
 
         <div class="card">
@@ -241,8 +260,32 @@
                 <input type="text" name="name" required>
                 <label>IP para ping</label>
                 <input type="text" name="ip" required>
+                <label>Destino de Alerta (Telegram)</label>
+                <select name="telegram_destination_id" id="target-telegram-select" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 12px;">
+                    <option value="">Padrão do Sistema</option>
+                </select>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('target-modal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL: Destino Telegram -->
+    <div id="dest-modal" class="modal-overlay" hidden>
+        <div class="modal">
+            <h3 id="dest-modal-title">Novo Destino Telegram</h3>
+            <form id="dest-form">
+                <input type="hidden" name="id">
+                <label>Nome (Identificação)</label>
+                <input type="text" name="name" required>
+                <label>Bot Token</label>
+                <input type="text" name="token" required>
+                <label>Chat ID do grupo</label>
+                <input type="text" name="chat_id" required>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('dest-modal')">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Salvar</button>
                 </div>
             </form>

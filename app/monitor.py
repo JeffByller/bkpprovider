@@ -138,7 +138,8 @@ async def _check_target(target, settings, now):
         conn.close()
 
     for msg in telegram_messages:
-        await send_telegram(msg)
+        dest_id = target["telegram_destination_id"] if "telegram_destination_id" in target.keys() else None
+        await send_telegram(msg, dest_id)
 
 
 async def icmp_worker():
@@ -179,6 +180,7 @@ def snapshot_for_target(target_row) -> dict:
         "status": target_row["status"] if is_active else "INACTIVE",
         "consecutive_failures": target_row["consecutive_failures"],
         "last_check": target_row["last_check"],
+        "telegram_destination_id": target_row["telegram_destination_id"] if "telegram_destination_id" in target_row.keys() else None,
         "latency_ms": target_row["latency_ms"],
         "avg_latency_ms": target_row["avg_latency_ms"],
         "packet_loss_pct": target_row["packet_loss_pct"] or 0,

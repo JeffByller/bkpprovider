@@ -20,6 +20,7 @@ from app.routes import (
     settings_api,
     summary_api,
     targets_api,
+    telegram_destinations_api,
 )
 
 
@@ -70,3 +71,4 @@ app.include_router(settings_api.router)
 app.include_router(summary_api.router)
 app.include_router(license_public_api.router)
 app.include_router(license_admin_api.router)
+app.include_router(telegram_destinations_api.router)
