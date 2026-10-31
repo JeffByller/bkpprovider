@@ -6,28 +6,27 @@ from collections import deque
 from app.db import get_db, get_settings_typed
 from app.telegram import send_telegram
 
-# In-memory rolling history per target: deque of (ok: bool, latency_ms: float|None).
-# Capped generously (100 samples); the effective window used for packet-loss/avg
-# calculations comes from the "packet_loss_window" setting, so changing that
-# setting takes effect immediately without needing to recreate the deques.
-_HISTORY_MAXLEN = 100
+_HISTORY_MAXLEN = 40
 HISTORY: dict[int, deque] = {}
 
 _PING_TIME_RE = re.compile(rb"time[=<]\s*([\d.]+)")
 
 
-def _history_for(target_id: int) -> deque:
-    hist = HISTORY.get(target_id)
+def _history_for(device_id: int) -> deque:
+    hist = HISTORY.get(device_id)
     if hist is None:
         hist = deque(maxlen=_HISTORY_MAXLEN)
-        HISTORY[target_id] = hist
+        HISTORY[device_id] = hist
     return hist
 
 
-async def ping_ip(ip: str):
-    """Sends 1 ICMP packet (2s timeout). Returns (ok, latency_ms|None)."""
+async def _single_ping(ip: str, count: int = 1, timeout: int = 2) -> tuple[bool, float | None]:
+    cmd = ["ping", "-c", str(count), "-W", str(timeout)]
+    if count > 1:
+        cmd.extend(["-i", "0.2"])
+    cmd.append(ip)
     proc = await asyncio.create_subprocess_exec(
-        "ping", "-c", "1", "-W", "2", ip,
+        *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
@@ -35,154 +34,177 @@ async def ping_ip(ip: str):
     ok = proc.returncode == 0
     latency = None
     if ok:
-        match = _PING_TIME_RE.search(stdout)
-        if match:
+        matches = _PING_TIME_RE.findall(stdout)
+        if matches:
             try:
-                latency = float(match.group(1))
+                vals = [float(x) for x in matches]
+                latency = round(sum(vals) / len(vals), 2)
             except ValueError:
                 latency = None
     return ok, latency
 
 
-def _window_stats(target_id: int, window: int):
-    hist = _history_for(target_id)
-    recent = list(hist)[-window:] if window > 0 else list(hist)
-    if not recent:
-        return None, 0.0
-    ok_latencies = [lat for ok, lat in recent if ok and lat is not None]
-    avg_latency = sum(ok_latencies) / len(ok_latencies) if ok_latencies else None
-    failures = sum(1 for ok, _ in recent if not ok)
-    loss_pct = round((failures / len(recent)) * 100, 1)
-    return avg_latency, loss_pct
+async def ping_ip(ip: str) -> tuple[bool, float | None]:
+    """
+    Availability-focused ICMP probe:
+    Sends 1 packet first. If it fails (e.g., transient cloud jitter), immediately
+    performs a quick 2-packet confirmation burst before declaring the probe failed.
+    """
+    ok, latency = await _single_ping(ip, count=1, timeout=2)
+    if ok:
+        return True, latency
+    return await _single_ping(ip, count=2, timeout=2)
 
 
-async def _check_target(target, settings, now):
-    target_id = target["id"]
-    name = target["name"]
-    ip = target["ip"]
-    failures = target["consecutive_failures"]
-    status = target["status"]
-    alert_sent = target["alert_sent"]
-    loss_alert_sent = target["loss_alert_sent"] or 0
+def _avg_latency(device_id: int) -> float | None:
+    hist = _history_for(device_id)
+    ok_latencies = [lat for ok, lat in hist if ok and lat is not None]
+    if not ok_latencies:
+        return None
+    return round(sum(ok_latencies) / len(ok_latencies), 2)
+
+
+async def _probe_device(dev, settings, now: str) -> dict:
+    dev_id = dev["id"]
+    name = dev["name"]
+    ip = dev["ip"]
+    failures = dev["consecutive_failures"] or 0
+    status = dev["status"] or "UP"
+    alert_sent = dev["alert_sent"] or 0
+    last_seen_up = dev["last_seen_up"]
+    interval = settings["ping_interval_seconds"]
+    fail_threshold = max(settings["fail_threshold"], 1)
 
     is_up, latency = await ping_ip(ip)
-    _history_for(target_id).append((is_up, latency))
+    _history_for(dev_id).append((is_up, latency))
+    avg_lat = _avg_latency(dev_id)
 
-    window = settings["packet_loss_window"]
-    fail_threshold = settings["fail_threshold"]
-    loss_threshold = settings["packet_loss_threshold_pct"]
-    avg_latency, loss_pct = _window_stats(target_id, window)
-
-    new_status = status
+    new_status = status if status in ("UP", "DOWN") else "UP"
     new_failures = failures
     new_alert_sent = alert_sent
-    new_loss_alert_sent = loss_alert_sent
+    new_last_seen_up = last_seen_up
     telegram_messages = []
 
     if is_up:
         new_failures = 0
         new_alert_sent = 0
+        new_last_seen_up = now
         if status == "DOWN":
             new_status = "UP"
             telegram_messages.append(
-                f"🟢 <b>[RECOVERED]</b> Host <b>{name}</b> ({ip}) está online novamente!"
+                f"🟢 <b>[ONLINE]</b> Dispositivo <b>{name}</b> (<code>{ip}</code>) voltou a responder ICMP! "
+                f"(Latência: {latency:.1f} ms)" if latency is not None else
+                f"🟢 <b>[ONLINE]</b> Dispositivo <b>{name}</b> (<code>{ip}</code>) voltou a responder ICMP!"
             )
+        else:
+            new_status = "UP"
     else:
         new_failures = failures + 1
         if new_failures >= fail_threshold:
             new_status = "DOWN"
             if alert_sent == 0:
+                approx_secs = fail_threshold * interval
                 telegram_messages.append(
-                    f"🚨 <b>[ALERT - DOWN]</b> Host <b>{name}</b> ({ip}) sem resposta ICMP "
-                    f"há {fail_threshold * 15}s aprox!"
+                    f"🚨 <b>[INDISPONÍVEL - DOWN]</b> Dispositivo <b>{name}</b> (<code>{ip}</code>) "
+                    f"sem resposta ICMP após {new_failures} verificações consecutivas (~{approx_secs}s)!"
                 )
                 new_alert_sent = 1
 
-    # Packet-loss alert is independent from the full-DOWN alert above.
-    if new_status != "DOWN" and loss_threshold > 0:
-        if loss_pct >= loss_threshold:
-            if loss_alert_sent == 0:
-                telegram_messages.append(
-                    f"⚠️ <b>[ALERTA - PERDA DE PACOTES]</b> Host <b>{name}</b> ({ip}) com "
-                    f"<b>{loss_pct}%</b> de perda nos últimos {min(len(_history_for(target_id)), window)} pings!"
-                )
-                new_loss_alert_sent = 1
-        else:
-            # Hysteresis: only send recovery alert if loss drops below half of loss_threshold (e.g. <= 10% when threshold is 20%)
-            recovery_threshold = max(0.0, loss_threshold / 2)
-            if loss_alert_sent == 1 and loss_pct <= recovery_threshold:
-                telegram_messages.append(
-                    f"🟢 <b>[NORMALIZADO - PERDA DE PACOTES]</b> Host <b>{name}</b> ({ip}) "
-                    f"normalizou a perda de pacotes (atual: <b>{loss_pct}%</b>)!"
-                )
-                new_loss_alert_sent = 0
-            elif loss_alert_sent == 1:
-                # Retain loss_alert_sent = 1 while loss is between recovery_threshold and loss_threshold to avoid flapping
-                new_loss_alert_sent = 1
-    else:
-        new_loss_alert_sent = 0
+    return {
+        "id": dev_id,
+        "status": new_status,
+        "consecutive_failures": new_failures,
+        "last_check": now,
+        "last_seen_up": new_last_seen_up,
+        "alert_sent": new_alert_sent,
+        "latency_ms": latency,
+        "avg_latency_ms": avg_lat,
+        "snmp_enabled": bool(dev["snmp_enabled"]),
+        "telegram_destination_id": dev["telegram_destination_id"],
+        "telegram_messages": telegram_messages,
+    }
 
+
+async def run_icmp_cycle():
+    settings = get_settings_typed()
     conn = get_db()
     try:
         c = conn.cursor()
-        c.execute(
-            """UPDATE ping_targets
-               SET consecutive_failures=?, status=?, last_check=?, alert_sent=?,
-                   latency_ms=?, avg_latency_ms=?, packet_loss_pct=?, loss_alert_sent=?
-               WHERE id=?""",
-            (new_failures, new_status, now, new_alert_sent,
-             latency, avg_latency, loss_pct, new_loss_alert_sent, target_id),
+        c.execute("SELECT * FROM devices WHERE active=1 AND icmp_enabled=1")
+        devices = [dict(r) for r in c.fetchall()]
+    finally:
+        conn.close()
+
+    if not devices:
+        return
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    results = await asyncio.gather(
+        *(_probe_device(d, settings, now) for d in devices),
+        return_exceptions=True,
+    )
+
+    valid_results = [r for r in results if isinstance(r, dict)]
+    if not valid_results:
+        return
+
+    # Single batch transaction for all ICMP updates -> reduces disk I/O by >90%
+    conn = get_db()
+    try:
+        c = conn.cursor()
+        c.executemany(
+            """
+            UPDATE devices
+            SET consecutive_failures=?, status=?, last_check=?, last_seen_up=?,
+                alert_sent=?, latency_ms=?, avg_latency_ms=?
+            WHERE id=?
+            """,
+            [
+                (
+                    r["consecutive_failures"],
+                    r["status"],
+                    r["last_check"],
+                    r["last_seen_up"],
+                    r["alert_sent"],
+                    r["latency_ms"],
+                    r["avg_latency_ms"],
+                    r["id"],
+                )
+                for r in valid_results
+            ],
         )
+        # For devices without SNMP enabled, record latency in device_metrics so latency trend is persisted
+        icmp_only_metrics = [
+            (r["id"], now, r["latency_ms"])
+            for r in valid_results
+            if not r["snmp_enabled"] and r["latency_ms"] is not None
+        ]
+        if icmp_only_metrics:
+            c.executemany(
+                "INSERT INTO device_metrics (device_id, timestamp, latency_ms) VALUES (?, ?, ?)",
+                icmp_only_metrics,
+            )
         conn.commit()
     finally:
         conn.close()
 
-    for msg in telegram_messages:
-        dest_id = target["telegram_destination_id"] if "telegram_destination_id" in target.keys() else None
-        await send_telegram(msg, dest_id)
+    # Dispatch Telegram notifications outside the DB transaction
+    for r in valid_results:
+        for msg in r["telegram_messages"]:
+            await send_telegram(msg, r["telegram_destination_id"])
 
 
 async def icmp_worker():
     while True:
         settings = get_settings_typed()
-        interval = settings["ping_interval_seconds"]
+        interval = max(settings["ping_interval_seconds"], 5)
         try:
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("SELECT * FROM ping_targets WHERE active=1")
-            targets = c.fetchall()
-            conn.close()
-
-            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # Ping every active target concurrently so the cycle stays close to
-            # `interval` regardless of how many hosts are being monitored.
-            await asyncio.gather(
-                *(_check_target(t, settings, now) for t in targets),
-                return_exceptions=True,
-            )
+            await run_icmp_cycle()
         except Exception as e:
             print(f"[ICMP Worker Error] {e}")
-
         await asyncio.sleep(interval)
 
 
-def snapshot_for_target(target_row) -> dict:
-    """Merges a DB row with in-memory history into a JSON-friendly dict for the API."""
-    target_id = target_row["id"]
-    hist = list(_history_for(target_id))[-30:]
-    is_active = bool(target_row["active"]) if "active" in target_row.keys() else True
-    return {
-        "id": target_id,
-        "name": target_row["name"],
-        "ip": target_row["ip"],
-        "active": is_active,
-        "status": target_row["status"] if is_active else "INACTIVE",
-        "consecutive_failures": target_row["consecutive_failures"],
-        "last_check": target_row["last_check"],
-        "telegram_destination_id": target_row["telegram_destination_id"] if "telegram_destination_id" in target_row.keys() else None,
-        "latency_ms": target_row["latency_ms"],
-        "avg_latency_ms": target_row["avg_latency_ms"],
-        "packet_loss_pct": target_row["packet_loss_pct"] or 0,
-        "history": [{"ok": bool(ok), "latency": lat} for ok, lat in hist],
-    }
+def get_history_for_device(device_id: int) -> list[dict]:
+    hist = list(_history_for(device_id))[-30:]
+    return [{"ok": bool(ok), "latency": lat} for ok, lat in hist]

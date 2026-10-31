@@ -2,11 +2,10 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-
-from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
 from app.mikrotik import mikrotik_worker
@@ -16,12 +15,14 @@ from app.routes import (
     devices_api,
     license_admin_api,
     license_public_api,
+    olt_api,
     pages,
     settings_api,
     summary_api,
-    targets_api,
     telegram_destinations_api,
 )
+from app.snmp import snmp_worker
+from app.telegram_bot import telegram_bot_worker
 
 
 @asynccontextmanager
@@ -29,10 +30,18 @@ async def lifespan(app: FastAPI):
     init_db()
     asyncio.create_task(icmp_worker())
     asyncio.create_task(mikrotik_worker())
+    asyncio.create_task(snmp_worker())
+    asyncio.create_task(telegram_bot_worker())
     yield
 
 
-app = FastAPI(title="BKPProvider Monitor & Backup", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(
+    title="BKPProvider - Gerenciador Centralizado de Dispositivos de Rede",
+    lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -64,7 +73,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(auth_routes.router)
 app.include_router(pages.router)
-app.include_router(targets_api.router)
 app.include_router(devices_api.router)
 app.include_router(devices_api.download_router)
 app.include_router(settings_api.router)
@@ -72,3 +80,4 @@ app.include_router(summary_api.router)
 app.include_router(license_public_api.router)
 app.include_router(license_admin_api.router)
 app.include_router(telegram_destinations_api.router)
+app.include_router(olt_api.router)

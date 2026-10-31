@@ -5,6 +5,7 @@ from app.db import get_db
 
 router = APIRouter(prefix="/api/telegram_destinations", dependencies=[Depends(require_auth)])
 
+
 @router.get("")
 async def list_destinations():
     conn = get_db()
@@ -15,6 +16,7 @@ async def list_destinations():
     finally:
         conn.close()
     return [dict(r) for r in rows]
+
 
 @router.post("")
 async def create_destination(payload: dict = Body(...)):
@@ -33,6 +35,7 @@ async def create_destination(payload: dict = Body(...)):
         conn.close()
     return {"ok": True, "id": new_id}
 
+
 @router.put("/{dest_id}")
 async def update_destination(dest_id: int, payload: dict = Body(...)):
     name = (payload.get("name") or "").strip()
@@ -49,13 +52,13 @@ async def update_destination(dest_id: int, payload: dict = Body(...)):
         conn.close()
     return {"ok": True}
 
+
 @router.delete("/{dest_id}")
 async def delete_destination(dest_id: int):
     conn = get_db()
     try:
         c = conn.cursor()
-        # Nullify any targets using this destination
-        c.execute("UPDATE ping_targets SET telegram_destination_id=NULL WHERE telegram_destination_id=?", (dest_id,))
+        c.execute("UPDATE devices SET telegram_destination_id=NULL WHERE telegram_destination_id=?", (dest_id,))
         c.execute("DELETE FROM telegram_destinations WHERE id=?", (dest_id,))
         conn.commit()
     finally:

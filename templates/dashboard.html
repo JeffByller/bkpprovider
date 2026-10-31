@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
-    <title>bkp</title>
+    <title>BKPProvider - Gerenciador Centralizado de Dispositivos</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
@@ -14,78 +14,395 @@
 <body>
     <div class="header">
         <div style="display: flex; align-items: center; gap: 12px;">
-            <img src="/static/favicon.svg" alt="bkp" style="width: 32px; height: 32px; border-radius: 6px;">
-            <h1>BKPProvider - Painel de Controle</h1>
+            <img src="/static/favicon.svg" alt="bkp" style="width: 34px; height: 34px; border-radius: 6px;">
+            <div>
+                <h1>BKPProvider — Gerenciador de Dispositivos de Rede</h1>
+            </div>
         </div>
-        <a href="/logout" class="btn btn-danger">Sair</a>
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <button class="btn btn-info btn-sm" onclick="refreshAll()" title="Atualizar dados agora">↻ Atualizar</button>
+            <a href="/logout" class="btn btn-danger btn-sm">Sair</a>
+        </div>
     </div>
 
     <nav class="tabs">
-        <button class="tab-btn active" data-tab="tab-dashboard">Dashboard</button>
+        <button class="tab-btn active" data-tab="tab-dashboard">Visão Geral</button>
+        <button class="tab-btn" data-tab="tab-dispositivos">Dispositivos Centralizados</button>
+        <button class="tab-btn" data-tab="tab-ssh">Acesso Remoto & SSH</button>
+        <button class="tab-btn" data-tab="tab-backups">Backups & Histórico</button>
+        <button class="tab-btn" data-tab="tab-olt" style="display: none !important;">OLT GPON</button>
         <button class="tab-btn" data-tab="tab-licencas">Licenças</button>
-        <button class="tab-btn" data-tab="tab-monitoramento">Monitoramento</button>
-        <button class="tab-btn" data-tab="tab-backups">Backups</button>
         <button class="tab-btn" data-tab="tab-config">Configurações</button>
     </nav>
 
-    <!-- DASHBOARD -->
+    <!-- ABA 1: DASHBOARD / VISÃO GERAL -->
     <section id="tab-dashboard" class="tab-content active">
         <div class="card-grid" id="summary-cards">
             <div class="stat-card">
-                <span class="stat-label">Total de Licenças</span>
-                <span class="stat-value" id="stat-licenses-total">-</span>
-            </div>
-            <div class="stat-card stat-up">
-                <span class="stat-label">Licenças Ativas</span>
-                <span class="stat-value" id="stat-licenses-active">-</span>
-            </div>
-            <div class="stat-card stat-down">
-                <span class="stat-label">Licenças Bloqueadas</span>
-                <span class="stat-value" id="stat-licenses-blocked">-</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-label">Checagens de Licença Hoje</span>
-                <span class="stat-value" id="stat-licenses-checks">-</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-label">Hosts monitorados</span>
-                <span class="stat-value" id="stat-targets-total">-</span>
-            </div>
-            <div class="stat-card stat-up">
-                <span class="stat-label">Hosts UP</span>
-                <span class="stat-value" id="stat-targets-up">-</span>
-            </div>
-            <div class="stat-card stat-down">
-                <span class="stat-label">Hosts DOWN</span>
-                <span class="stat-value" id="stat-targets-down">-</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-label">Latência média</span>
-                <span class="stat-value" id="stat-avg-latency">-</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-label">Dispositivos Mikrotik</span>
+                <span class="stat-label">Dispositivos Cadastrados</span>
                 <span class="stat-value" id="stat-devices-total">-</span>
+                <small class="stat-sub" id="stat-ros-breakdown">v6: - | v7: -</small>
             </div>
             <div class="stat-card stat-up">
-                <span class="stat-label">Backups OK hoje</span>
-                <span class="stat-value" id="stat-backups-ok">-</span>
+                <span class="stat-label">Dispositivos Online (UP)</span>
+                <span class="stat-value" id="stat-targets-up">-</span>
+                <small class="stat-sub">Disponibilidade ICMP</small>
             </div>
             <div class="stat-card stat-down">
-                <span class="stat-label">Backups com falha hoje</span>
-                <span class="stat-value" id="stat-backups-failed">-</span>
+                <span class="stat-label">Indisponíveis (DOWN)</span>
+                <span class="stat-value" id="stat-targets-down">-</span>
+                <small class="stat-sub">Sem resposta ICMP</small>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Latência Média</span>
+                <span class="stat-value" id="stat-avg-latency">-</span>
+                <small class="stat-sub">Tempo de resposta ICMP</small>
+            </div>
+            <div class="stat-card stat-up">
+                <span class="stat-label">Backups OK Hoje</span>
+                <span class="stat-value" id="stat-backups-ok">-</span>
+                <small class="stat-sub" id="stat-backups-sub">Falhas: 0</small>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Monitoramento SNMP</span>
+                <span class="stat-value" id="stat-snmp-ok">-</span>
+                <small class="stat-sub" id="stat-snmp-sub">Coleta de métricas ativa</small>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">Licenças Ativas / Total</span>
+                <span class="stat-value" id="stat-licenses-active">-</span>
+                <small class="stat-sub" id="stat-licenses-sub">Checagens hoje: -</small>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <div class="card-header" style="justify-content: flex-end; margin-bottom: 10px;">
+                <button class="btn btn-primary" onclick="openDeviceModal()">+ Novo Dispositivo</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Dispositivo</th>
+                            <th>IP / Porta SSH</th>
+                            <th>RouterOS / Hardware</th>
+                            <th>Status ICMP</th>
+                            <th>Latência</th>
+                            <th>Saúde (CPU / Mem / Uptime)</th>
+                            <th>Último Backup</th>
+                            <th>Ações Rápidas</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dashboard-devices-tbody">
+                        <tr><td colspan="8" style="text-align:center; color:#888;">Carregando dispositivos...</td></tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </section>
 
-    <!-- LICENÇAS -->
+    <!-- ABA 2: DISPOSITIVOS CENTRALIZADOS -->
+    <section id="tab-dispositivos" class="tab-content">
+        <div class="card">
+            <div class="card-header" style="justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-bottom: 10px;">
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <input type="text" id="device-search-input" placeholder="Buscar por nome, IP ou versão..." oninput="renderDevicesTables()" style="width: 220px; margin: 0;">
+                    <select id="device-filter-select" onchange="renderDevicesTables()" style="padding: 8px;">
+                        <option value="all">Todos os dispositivos</option>
+                        <option value="v6">Somente RouterOS v6</option>
+                        <option value="v7">Somente RouterOS v7</option>
+                        <option value="up">Status: UP</option>
+                        <option value="down">Status: DOWN</option>
+                        <option value="backup">Com Backup Habilitado</option>
+                        <option value="snmp">Com SNMP Habilitado</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="openDeviceModal()">+ Cadastrar Dispositivo</button>
+                </div>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Equipamento</th>
+                            <th>Endereço IP : SSH</th>
+                            <th>Versão SO / Modelo</th>
+                            <th>Módulos Habilitados</th>
+                            <th>Status & Latência</th>
+                            <th>Tendência ICMP</th>
+                            <th>Métricas (CPU / Mem / Tráfego)</th>
+                            <th>Gerenciamento</th>
+                        </tr>
+                    </thead>
+                    <tbody id="devices-central-tbody">
+                        <tr><td colspan="8" style="text-align:center; color:#888;">Carregando inventário...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <!-- ABA 3: ACESSO REMOTO & EXECUÇÃO DE COMANDOS SSH -->
+    <section id="tab-ssh" class="tab-content">
+        <div class="card">
+            <div class="card-header" style="flex-wrap: wrap; gap: 12px;">
+                <div>
+                    <h2>Acesso Remoto</h2>
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <label style="margin: 0; white-space: nowrap;">Equipamento Alvo:</label>
+                    <select id="ssh-device-select" onchange="onSshDeviceChange()" style="min-width: 260px; padding: 8px; font-weight: bold;"></select>
+                    <button class="btn btn-info btn-sm" onclick="probeSelectedSshDevice()">Detectar RouterOS</button>
+                </div>
+            </div>
+
+            <div id="ssh-device-banner" class="device-info-banner">
+                Selecione um dispositivo com SSH habilitado para executar comandos.
+            </div>
+
+            <!-- CONFIGURAÇÃO DE FAILOVER & NETWATCH (OCULTO POR PADRÃO, EXPANDE AO CLICAR) -->
+            <div class="sub-config-box" style="background: #f8fafc; border: 1px solid #cbd5e1; border-left: 4px solid #0d9488; margin-top: 14px; padding: 12px 14px;">
+                <div onclick="toggleFailoverPanel()" style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none;">
+                    <h3 style="margin: 0; font-size: 15px; color: #0f172a;">🛡️ Configuração de Failover & Netwatch (v6 / v7)</h3>
+                    <span id="failover-chevron" style="font-size: 12px; color: #64748b; font-weight: bold;">▼ Expandir</span>
+                </div>
+
+                <div id="failover-assistant-body" hidden style="margin-top: 12px; border-top: 1px solid #e2e8f0; padding-top: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-teal btn-sm" id="btn-failover-analyze" onclick="analyzeSelectedDeviceFailover()">🔍 1. Analisar</button>
+                            <button type="button" class="btn btn-sm" style="background:#16a34a; color:#fff;" onclick="toggleSelectedDeviceNetwatch(true)">▶ Ativar Netwatch</button>
+                            <button type="button" class="btn btn-warning btn-sm" onclick="toggleSelectedDeviceNetwatch(false)">⏸ Pausar Netwatch</button>
+                            <button type="button" class="btn btn-info btn-sm" onclick="testSelectedDeviceFailoverTelegram()">🔔 Testar Telegram</button>
+                        </div>
+                        <span id="failover-status-badge" class="badge badge-inactive" hidden></span>
+                    </div>
+
+                    <div id="failover-analysis-summary" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; color: #334155;">
+                        Clique em <b>"🔍 1. Analisar"</b> para identificar as interfaces e rotas do equipamento.
+                    </div>
+
+                    <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px;">
+                        <datalist id="failover-wan-datalist"></datalist>
+
+                        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px;">
+                            <!-- Link 1 (Principal) -->
+                            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px;">
+                                <div style="font-weight: bold; font-size: 12px; color: #166534; margin-bottom: 6px;">🟢 Link 1 — Principal (PRINCIPAL)</div>
+                                <div class="form-group" style="margin-bottom: 6px;">
+                                    <label style="margin-top: 0; font-size: 11px;">Gateway / Interface</label>
+                                    <input type="text" id="fo-link1-gw" list="failover-wan-datalist" placeholder="Ex: pppoe-link1 ou IP do Gateway" style="margin: 2px 0; font-family: monospace; font-size: 12px;">
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 90px; gap: 8px;">
+                                    <div class="form-group" style="margin: 0;">
+                                        <label style="margin-top: 0; font-size: 11px;">IP Externo (Ping)</label>
+                                        <input type="text" id="fo-link1-host" value="198.41.0.4" placeholder="198.41.0.4" style="margin: 2px 0; font-family: monospace; font-size: 12px;">
+                                    </div>
+                                    <div class="form-group" style="margin: 0;">
+                                        <label style="margin-top: 0; font-size: 11px;">Distância</label>
+                                        <input type="number" id="fo-link1-dist" value="1" min="1" max="240" style="margin: 2px 0; font-size: 12px;">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Link 2 (Backup) -->
+                            <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 10px;">
+                                <div style="font-weight: bold; font-size: 12px; color: #1e40af; margin-bottom: 6px;">🔵 Link 2 — Backup (BACKUP)</div>
+                                <div class="form-group" style="margin-bottom: 6px;">
+                                    <label style="margin-top: 0; font-size: 11px;">Gateway / Interface</label>
+                                    <input type="text" id="fo-link2-gw" list="failover-wan-datalist" placeholder="Ex: pppoe-link2 ou IP do Gateway" style="margin: 2px 0; font-family: monospace; font-size: 12px;">
+                                </div>
+                                <div style="display: grid; grid-template-columns: 1fr 90px; gap: 8px;">
+                                    <div class="form-group" style="margin: 0;">
+                                        <label style="margin-top: 0; font-size: 11px;">IP Externo (Ping)</label>
+                                        <input type="text" id="fo-link2-host" value="199.9.14.201" placeholder="199.9.14.201" style="margin: 2px 0; font-family: monospace; font-size: 12px;">
+                                    </div>
+                                    <div class="form-group" style="margin: 0;">
+                                        <label style="margin-top: 0; font-size: 11px;">Distância</label>
+                                        <input type="number" id="fo-link2-dist" value="2" min="1" max="245" style="margin: 2px 0; font-size: 12px;">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed #e2e8f0;">
+                            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px;">
+                                    <label style="margin: 0; font-size: 12px;">Intervalo Netwatch:</label>
+                                    <input type="text" id="fo-interval" value="10s" style="width: 65px; margin: 0; padding: 5px 8px; font-family: monospace; font-size: 12px;">
+                                </div>
+                                <small id="fo-feedback-msg" style="color: #64748b; font-size: 12px;"></small>
+                            </div>
+                            <button type="button" class="btn btn-primary" id="btn-failover-configure" onclick="configureSelectedDeviceFailover()">
+                                ⚡ 2. Configurar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h3 style="margin: 16px 0 10px 0; font-size: 15px;">Ações Rápidas</h3>
+            <div id="quick-actions-grid" class="quick-actions-grid"></div>
+
+            <div class="custom-cmd-box">
+                <div style="flex: 1;">
+                    <label style="margin-top: 0;">Executar Comando</label>
+                    <div style="display: flex; gap: 8px; margin-top: 4px;">
+                        <input type="text" id="ssh-custom-cmd-input" placeholder="Ex: /ip route print detail where dst-address=0.0.0.0/0  ou  /system identity print" style="margin: 0; font-family: monospace;">
+                        <button class="btn btn-primary" id="ssh-run-custom-btn" onclick="runCustomSshCommand()">Executar via SSH</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="terminal-wrapper">
+                <div class="terminal-header">
+                    <span id="terminal-title">Saída do Terminal SSH</span>
+                    <div style="display: flex; gap: 8px;">
+                        <span id="terminal-meta" style="font-size: 12px; color: #94a3b8;"></span>
+                        <button type="button" class="btn-copy" onclick="copyTerminalOutput()">Copiar Saída</button>
+                        <button type="button" class="btn-copy" onclick="clearTerminalOutput()">Limpar</button>
+                    </div>
+                </div>
+                <pre id="terminal-output" class="terminal-pre">Clique em qualquer Ação Rápida acima ou digite um comando RouterOS para visualizar o resultado aqui.</pre>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <h2>Histórico</h2>
+                </div>
+                <button class="btn btn-info btn-sm" onclick="refreshCommandLogs(1)">Atualizar Histórico</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data / Hora</th>
+                            <th>Dispositivo</th>
+                            <th>Ação / Comando Executado</th>
+                            <th>Status</th>
+                            <th>Tempo</th>
+                            <th>IP Operador</th>
+                            <th>Resultado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="command-logs-tbody">
+                        <tr><td colspan="7" style="text-align:center; color:#888;">Carregando auditoria...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="command-logs-pagination" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:10px; border-top:1px solid #e2e8f0; font-size:13px; color:#475569;"></div>
+        </div>
+    </section>
+
+    <!-- ABA 4: BACKUPS & HISTÓRICO -->
+    <section id="tab-backups" class="tab-content">
+        <div class="card">
+            <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <h2>Gerenciamento de Backups</h2>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-info" onclick="triggerBackupAll(this)">Executar Todos os Backups Agora</button>
+                    <button class="btn btn-primary" onclick="openDeviceModal()">+ Novo Dispositivo</button>
+                </div>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Dispositivo</th>
+                            <th>IP : Porta SSH</th>
+                            <th>Versão RouterOS</th>
+                            <th>Último Backup</th>
+                            <th>Status</th>
+                            <th>Arquivos Armazenados</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody id="backups-devices-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <h2>Histórico de Execuções de Backup</h2>
+                    <p class="section-subtitle">Registro detalhado de backups automáticos e manuais (25 por página)</p>
+                </div>
+                <button class="btn btn-info btn-sm" onclick="refreshBackupHistory(1)">Atualizar</button>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Data / Hora</th>
+                            <th>Dispositivo</th>
+                            <th>RouterOS</th>
+                            <th>Tipo</th>
+                            <th>Status</th>
+                            <th>Tamanho</th>
+                            <th>Duração</th>
+                            <th>Arquivo / Mensagem</th>
+                        </tr>
+                    </thead>
+                    <tbody id="backup-history-tbody"></tbody>
+                </table>
+            </div>
+            <div id="backup-history-pagination" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:10px; border-top:1px solid #e2e8f0; font-size:13px; color:#475569;"></div>
+        </div>
+    </section>
+
+    <!-- ABA: OLT GPON (CIANET) [Oculta no frontend a pedido do operador] -->
+    <section id="tab-olt" class="tab-content" style="display: none !important;">
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="card-header" style="justify-content:space-between; align-items:center;">
+                <div>
+                    <h2>OLT GPON — Cianet FD1608S</h2>
+                    <p class="section-subtitle">Acesso direto via VPN L2TP (172.18.0.30) • Consulta de Sinal Óptico e Gestão de ONUs</p>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span id="olt-status-badge" class="badge badge-up">🟢 Conectada (172.18.0.30)</span>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="checkOltStatus()">Testar Conexão</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="card-header">
+                <h3>🔍 Consulta de ONU & Níveis de Sinal</h3>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                <input type="text" id="olt-search-input" placeholder="Digite o MAC ou Serial (ex: FHTTFE282DC4 ou ITBS0ACD111A)" style="flex: 1; min-width: 280px; padding: 10px; font-family: monospace;" onkeydown="if(event.key==='Enter')searchOltOnt()">
+                <button type="button" class="btn btn-primary" onclick="searchOltOnt()">Consultar ONU</button>
+            </div>
+            <div id="olt-search-result" style="margin-top: 15px; display: none;"></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header" style="justify-content:space-between; align-items:center;">
+                <div>
+                    <h3>🆕 ONUs Aguardando Autorização (Autofind)</h3>
+                    <p class="section-subtitle">ONUs recém conectadas na fibra esperando aprovação na OLT</p>
+                </div>
+                <button type="button" class="btn btn-info btn-sm" onclick="refreshOltUnauthorized()">Buscar Novas ONUs</button>
+            </div>
+            <div id="olt-unauth-container" style="margin-top: 10px;">
+                <p style="color:#666; font-size:13px;">Clique em "Buscar Novas ONUs" para verificar.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ABA 5: LICENÇAS (CONTROLE DE CHAVES LEVE) -->
     <section id="tab-licencas" class="tab-content">
         <div class="card">
             <div class="card-header">
                 <div>
-                    <h2>Gerenciamento de Licenças</h2>
+                    <h2>Controle de Licenças</h2>
                     <p style="margin: 4px 0 0 0; color: #666; font-size: 13px;">
-                        Servidor de ativação e validação para clientes externos (Endpoint: <code>https://bkp.jeffgsan.com.br/api/license/verify</code>)
+                        Validação enxuta de chaves (Endpoint: <code>https://bkp.jeffgsan.com.br/api/license/verify</code>)
                     </p>
                 </div>
                 <div style="display: flex; gap: 8px;">
@@ -102,74 +419,19 @@
                             <th>Status</th>
                             <th>Expiração</th>
                             <th>Domínio / Rede IP (ASN)</th>
-                            <th>Última Comunicação</th>
-                            <th>Total Checagens</th>
+                            <th>Último Acesso</th>
                             <th>Ações</th>
                         </tr>
                     </thead>
                     <tbody id="licenses-tbody">
-                        <tr><td colspan="8" style="text-align: center; color: #888;">Carregando licenças...</td></tr>
+                        <tr><td colspan="7" style="text-align: center; color: #888;">Carregando licenças...</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </section>
 
-    <!-- MONITORAMENTO -->
-    <section id="tab-monitoramento" class="tab-content">
-        <div class="card">
-            <div class="card-header">
-                <h2>Monitoramento ICMP (Ping)</h2>
-                <button class="btn btn-primary" onclick="openTargetModal()">Novo IP</button>
-            </div>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Nome</th>
-                            <th>IP</th>
-                            <th>Status</th>
-                            <th>Latência</th>
-                            <th>Média</th>
-                            <th>Perda</th>
-                            <th>Histórico</th>
-                            <th>Última checagem</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="targets-tbody"></tbody>
-                </table>
-            </div>
-        </div>
-    </section>
-
-    <!-- BACKUPS -->
-    <section id="tab-backups" class="tab-content">
-        <div class="card">
-            <div class="card-header">
-                <h2>Backup Mikrotik (v6 / v7)</h2>
-                <button class="btn btn-primary" onclick="openDeviceModal()">Novo Mikrotik</button>
-            </div>
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Nome</th>
-                            <th>IP:Porta</th>
-                            <th>Usuário</th>
-                            <th>Último backup</th>
-                            <th>Status</th>
-                            <th>Arquivos</th>
-                            <th>Ações</th>
-                        </tr>
-                    </thead>
-                    <tbody id="devices-tbody"></tbody>
-                </table>
-            </div>
-        </div>
-    </section>
-
-    <!-- CONFIGURAÇÕES -->
+    <!-- ABA 6: CONFIGURAÇÕES -->
     <section id="tab-config" class="tab-content">
         <div class="card">
             <h2>Telegram Padrão (Fallback)</h2>
@@ -205,29 +467,37 @@
         </div>
 
         <div class="card">
-            <h2>Monitoramento</h2>
+            <h2>Monitoramento ICMP & Coleta SNMP</h2>
             <form id="monitoring-form" class="grid">
                 <div class="form-group">
-                    <label>Intervalo entre checagens (segundos)</label>
+                    <label>Intervalo entre checagens ICMP (segundos)</label>
                     <input type="number" name="ping_interval_seconds" min="5">
                 </div>
                 <div class="form-group">
-                    <label>Falhas consecutivas para considerar DOWN</label>
+                    <label>Falhas consecutivas para declarar DOWN</label>
                     <input type="number" name="fail_threshold" min="1">
                 </div>
                 <div class="form-group">
-                    <label>Janela para % de perda (nº de amostras)</label>
-                    <input type="number" name="packet_loss_window" min="1">
+                    <label>Intervalo de coleta de métricas SNMP (segundos)</label>
+                    <input type="number" name="snmp_interval_seconds" min="15">
                 </div>
                 <div class="form-group">
-                    <label>Limite de perda de pacotes (%) para alerta</label>
-                    <input type="number" name="packet_loss_threshold_pct" min="0" max="100">
+                    <label>Community SNMP Padrão</label>
+                    <input type="text" name="snmp_default_community" placeholder="public">
+                </div>
+                <div class="form-group">
+                    <label>IP Exclusivo Autorizado no SNMP / Firewall</label>
+                    <input type="text" name="snmp_allowed_ip" value="38.225.221.159" placeholder="38.225.221.159">
+                </div>
+                <div class="form-group">
+                    <label>Retenção de histórico de métricas (dias)</label>
+                    <input type="number" name="metrics_retention_days" min="1" max="90">
                 </div>
             </form>
         </div>
 
         <div class="card">
-            <h2>Backup Mikrotik</h2>
+            <h2>Agendamento de Backup Automático</h2>
             <form id="backup-form" class="grid">
                 <div class="form-group">
                     <label>Hora do backup automático (0-23)</label>
@@ -238,37 +508,281 @@
                     <input type="number" name="backup_minute" min="0" max="59">
                 </div>
                 <div class="form-group">
-                    <label>Backups a manter por dispositivo</label>
+                    <label>Backups a manter por dispositivo (retenção)</label>
                     <input type="number" name="backup_retention" min="1">
                 </div>
             </form>
         </div>
 
         <div class="card">
-            <button class="btn btn-primary" onclick="saveAllSettings()">Salvar configurações</button>
-            <span id="settings-saved-msg" class="saved-msg" hidden>Salvo!</span>
+            <button class="btn btn-primary" onclick="saveAllSettings()">Salvar Configurações</button>
+            <span id="settings-saved-msg" class="saved-msg" hidden>Configurações salvas com sucesso!</span>
         </div>
     </section>
 
-    <!-- MODAL: Target (add/edit) -->
-    <div id="target-modal" class="modal-overlay" hidden>
-        <div class="modal">
-            <h3 id="target-modal-title">Novo IP para monitorar</h3>
-            <form id="target-form">
+    <!-- MODAL CENTRALIZADO: CRIAR / EDITAR DISPOSITIVO -->
+    <div id="device-modal" class="modal-overlay" hidden>
+        <div class="modal" style="width: 620px; max-width: 95vw; max-height: 92vh; overflow-y: auto;">
+            <h3 id="device-modal-title">Cadastrar Dispositivo</h3>
+            <form id="device-form" style="margin-top: 12px;">
                 <input type="hidden" name="id">
-                <label>Nome do dispositivo/local</label>
-                <input type="text" name="name" required>
-                <label>IP para ping</label>
-                <input type="text" name="ip" required>
-                <label>Destino de Alerta (Telegram)</label>
-                <select name="telegram_destination_id" id="target-telegram-select" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 12px;">
-                    <option value="">Padrão do Sistema</option>
-                </select>
+
+                <div class="grid" style="gap: 12px;">
+                    <div class="form-group">
+                        <label>Nome do Equipamento</label>
+                        <input type="text" name="name" required placeholder="Ex: BORDA-JNET ou CRISTAL-SUU">
+                    </div>
+                    <div class="form-group">
+                        <label>Endereço IP</label>
+                        <input type="text" name="ip" required placeholder="Ex: 177.84.58.92">
+                    </div>
+                </div>
+
+                <div class="grid" style="gap: 12px;">
+                    <div class="form-group">
+                        <label>Tipo de Equipamento</label>
+                        <select name="device_type" style="width:100%; padding:8px;">
+                            <option value="mikrotik">MikroTik RouterOS (Padrão)</option>
+                            <option value="provedor">MikroTik Provedor / Concentrador</option>
+                            <option value="generic">Outro / Genérico (Ping/SNMP)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Versão do RouterOS</label>
+                        <select name="ros_version" style="width:100%; padding:8px;">
+                            <option value="auto">Detectar Automaticamente via SSH</option>
+                            <option value="v6">MikroTik RouterOS v6</option>
+                            <option value="v7">MikroTik RouterOS v7</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="feature-flags-box">
+                    <label style="margin-top: 0; margin-bottom: 8px; color: #1e293b;">Funcionalidades Habilitadas para este Dispositivo:</label>
+                    <div class="flags-grid">
+                        <label class="flag-check">
+                            <input type="checkbox" name="icmp_enabled" checked>
+                            <span>Monitoramento ICMP (Ping)</span>
+                        </label>
+                        <label class="flag-check">
+                            <input type="checkbox" name="backup_enabled" onchange="toggleDeviceCredentialFields()">
+                            <span>Backup Automático/Manual</span>
+                        </label>
+                        <label class="flag-check">
+                            <input type="checkbox" name="ssh_enabled" onchange="toggleDeviceCredentialFields()">
+                            <span>Gerenciamento & Comandos SSH</span>
+                        </label>
+                        <label class="flag-check">
+                            <input type="checkbox" name="snmp_enabled" onchange="toggleDeviceCredentialFields()">
+                            <span>Coleta de Métricas SNMP</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div id="device-ssh-section" class="sub-config-box">
+                    <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #007bff;">Acesso</h4>
+                    <div class="grid" style="grid-template-columns: 110px 1fr 1fr; gap: 10px;">
+                        <div class="form-group" style="margin:0;">
+                            <label style="margin-top:0;">Porta SSH</label>
+                            <input type="number" name="ssh_port" value="2250">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="margin-top:0;">Usuário SSH</label>
+                            <input type="text" name="ssh_username" value="gerabackup" placeholder="Ex: gerabackup">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="margin-top:0;">Senha SSH</label>
+                            <input type="password" name="ssh_password" value="gerabackup" autocomplete="new-password" placeholder="Senha SSH">
+                        </div>
+                    </div>
+                    <small id="device-password-hint" class="hint" hidden>Senha já cadastrada e criptografada. Deixe em branco para manter a senha atual.</small>
+                </div>
+
+                <div id="device-snmp-section" class="sub-config-box">
+                    <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #0f766e;">Configurações SNMP (v2c)</h4>
+                    <div class="grid" style="grid-template-columns: 1fr 120px; gap: 10px;">
+                        <div class="form-group" style="margin:0;">
+                            <label style="margin-top:0;">Community SNMP</label>
+                            <input type="text" name="snmp_community" value="@BKP2712" placeholder="Ex: @BKP2712">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="margin-top:0;">Porta UDP</label>
+                            <input type="number" name="snmp_port" value="161">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 10px;">
+                    <div class="form-group">
+                        <label>Destino de Alerta (Telegram)</label>
+                        <select name="telegram_destination_id" id="device-telegram-select" style="width: 100%; padding: 8px;">
+                            <option value="">Padrão do Sistema</option>
+                        </select>
+                    </div>
+                </div>
+
                 <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('target-modal')">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('device-modal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar Dispositivo</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- MODAL: MÉTRICAS SNMP & CONFIGURAÇÃO AUTOMATIZADA VIA SSH -->
+    <div id="snmp-modal" class="modal-overlay" hidden>
+        <div class="modal modal-wide" style="width: 940px; max-height: 92vh; overflow-y: auto;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+                <div>
+                    <h3 id="snmp-modal-title" style="margin:0;">Métricas & Configuração SNMP</h3>
+                    <small id="snmp-modal-subtitle" style="color:#64748b;"></small>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <label style="margin:0; font-size:12px; display:flex; align-items:center; gap:5px; cursor:pointer; color:#334155; background:#f1f5f9; padding:5px 10px; border-radius:6px;">
+                        <input type="checkbox" id="snmp-live-refresh-chk" onchange="toggleSnmpModalLiveRefresh()"> 🔄 Auto-atualizar tela (30s)
+                    </label>
+                    <button type="button" class="btn btn-info btn-sm" id="snmp-poll-now-btn" onclick="pollDeviceSnmpNow()">Coletar Agora</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="closeSnmpModal()">Fechar</button>
+                </div>
+            </div>
+
+            <!-- Controle de Coleta Automática (Modo Análise sob demanda por equipamento) -->
+            <div class="sub-config-box" style="background:#eff6ff; border:1px solid #bfdbfe; margin-bottom:12px; padding:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <strong style="color:#1e3a8a; font-size:14px;">Coleta Automática em Segundo Plano (Modo Análise)</strong>
+                            <span id="snmp-auto-status-badge" class="badge badge-neutral">DESATIVADA (Apenas Manual)</span>
+                        </div>
+                        <div style="font-size:12px; color:#3b82f6; margin-top:2px;">
+                            Ative apenas nos equipamentos que deseja acompanhar e gerar relatório por um período (não fica ativo por padrão para todos).
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <select id="snmp-auto-duration" style="margin:0; padding:6px 10px; font-size:13px; width:auto;">
+                            <option value="1">Acompanhar por 1 Hora</option>
+                            <option value="6">Acompanhar por 6 Horas</option>
+                            <option value="24" selected>Acompanhar por 24 Horas</option>
+                            <option value="168">Acompanhar por 7 Dias</option>
+                            <option value="0">Contínuo (até desativar)</option>
+                        </select>
+                        <button type="button" class="btn btn-primary btn-sm" id="snmp-auto-start-btn" onclick="setDeviceSnmpAutoPoll(true)">▶ Ativar Coleta Automática</button>
+                        <button type="button" class="btn btn-danger btn-sm" id="snmp-auto-stop-btn" onclick="setDeviceSnmpAutoPoll(false)" hidden>⏹ Desativar Coleta Automática</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Painel de Provisionamento Automatizado SNMP via SSH -->
+            <div class="sub-config-box" style="background:#f8fafc; border:1px solid #cbd5e1; margin-bottom:14px; padding:10px 12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <div>
+                        <strong style="color:#0f172a; font-size:13px;">Configuração Automatizada de SNMP no MikroTik via SSH</strong>
+                        <div style="font-size:11px; color:#475569;">Restringe a community ao IP <code>38.225.221.159/32</code>, desativa a <code>public</code> e cria regra Firewall UDP/161 (Accept IP + Drop resto).</div>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <input type="text" id="prov-snmp-community" placeholder="Community" title="Nome da Community SNMP" style="width:120px; margin:0; padding:5px 8px; font-size:12px;">
+                        <input type="text" id="prov-snmp-allowed-ip" value="38.225.221.159" placeholder="38.225.221.159" title="IP exclusivo autorizado no SNMP e Firewall" style="width:130px; margin:0; padding:5px 8px; font-family:monospace; font-size:12px;">
+                        <label style="margin:0; font-size:12px; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                            <input type="checkbox" id="prov-snmp-firewall" checked> Firewall UDP/161
+                        </label>
+                        <button type="button" class="btn btn-primary btn-sm" id="prov-snmp-btn" onclick="provisionSnmpViaSsh()">Configurar SNMP no RouterOS</button>
+                    </div>
+                </div>
+                <div id="prov-snmp-feedback" style="margin-top:8px; font-size:12px;" hidden></div>
+            </div>
+
+            <!-- Cards de Métricas em Tempo Real -->
+            <div class="card-grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom:14px;">
+                <div class="stat-card" style="padding:12px;">
+                    <span class="stat-label">Uptime</span>
+                    <span class="stat-value" id="metric-uptime" style="font-size:18px;">-</span>
+                </div>
+                <div class="stat-card" style="padding:12px;">
+                    <span class="stat-label">Uso de CPU (Atual)</span>
+                    <span class="stat-value" id="metric-cpu" style="font-size:22px;">-</span>
+                </div>
+                <div class="stat-card" style="padding:12px;">
+                    <span class="stat-label">Uso de Memória (Atual)</span>
+                    <span class="stat-value" id="metric-mem" style="font-size:22px;">-</span>
+                    <small class="stat-sub" id="metric-mem-detail"></small>
+                </div>
+                <div class="stat-card" style="padding:12px;">
+                    <span class="stat-label">Tráfego Atual (RX / TX)</span>
+                    <span class="stat-value" id="metric-traffic" style="font-size:16px;">-</span>
+                </div>
+            </div>
+
+            <!-- Filtro de Período e Relatório Estatístico de Análise -->
+            <div class="sub-config-box" style="background:#f8fafc; border:1px solid #e2e8f0; margin-bottom:14px; padding:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <strong style="font-size:13px; color:#0f172a;">📊 Relatório de Análise do Período:</strong>
+                        <select id="snmp-report-hours" onchange="loadDeviceMetricsIntoModal(currentSnmpDeviceId)" style="margin:0; padding:5px 10px; font-size:12px; width:auto; font-weight:600;">
+                            <option value="1">Última 1 Hora</option>
+                            <option value="6">Últimas 6 Horas</option>
+                            <option value="24" selected>Últimas 24 Horas</option>
+                            <option value="168">Últimos 7 Dias</option>
+                            <option value="0">Todo o Histórico</option>
+                        </select>
+                        <small id="snmp-report-window-info" style="color:#64748b; font-size:12px;"></small>
+                    </div>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                        <button type="button" class="btn btn-info btn-sm" onclick="exportDeviceMetricsCsv()">📥 Baixar Relatório CSV</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="copyDeviceAnalysisSummary()">📋 Copiar Resumo</button>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="clearDeviceMetricsHistory()">🗑️ Zerar Histórico</button>
+                    </div>
+                </div>
+                <div id="snmp-report-summary-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:8px; font-size:12px;"></div>
+            </div>
+
+            <!-- Gráficos Históricos SVG -->
+            <div class="grid" style="gap:14px; margin-bottom:16px;">
+                <div class="sub-config-box">
+                    <h4 style="margin:0 0 8px 0; font-size:13px;">Histórico de CPU (%) e Memória (%)</h4>
+                    <div id="chart-cpu-mem"></div>
+                </div>
+                <div class="sub-config-box">
+                    <h4 style="margin:0 0 8px 0; font-size:13px;">Histórico de Tráfego (RX / TX) e Latência</h4>
+                    <div id="chart-traffic-lat"></div>
+                </div>
+            </div>
+
+            <!-- Estado e Tráfego das Interfaces -->
+            <h4 style="margin:0 0 8px 0; font-size:14px;">Estado das Interfaces e Tráfego</h4>
+            <div class="table-wrap" style="max-height:240px; overflow-y:auto;">
+                <table style="min-width:100%; margin-top:0;">
+                    <thead>
+                        <tr>
+                            <th>Interface</th>
+                            <th>Estado</th>
+                            <th>Taxa RX (Entrada)</th>
+                            <th>Taxa TX (Saída)</th>
+                            <th>Total RX Acumulado</th>
+                            <th>Total TX Acumulado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="snmp-interfaces-tbody">
+                        <tr><td colspan="6" style="text-align:center; color:#888;">Sem dados de interfaces coletados.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: VISUALIZADOR DE ARQUIVO DE BACKUP (.RSC / .TXT) -->
+    <div id="backup-view-modal" class="modal-overlay" hidden>
+        <div class="modal modal-wide" style="width: 860px; max-height: 90vh; display: flex; flex-direction: column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:10px; margin-bottom:10px;">
+                <div>
+                    <h3 id="backup-view-title" style="margin:0;">Visualizar Backup</h3>
+                    <small id="backup-view-subtitle" style="color:#666;"></small>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button type="button" class="btn btn-info btn-sm" onclick="copyBackupViewerContent()">Copiar Script</button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('backup-view-modal')">Fechar</button>
+                </div>
+            </div>
+            <pre id="backup-view-content" class="terminal-pre" style="flex:1; max-height:68vh; overflow:auto; margin:0;"></pre>
         </div>
     </div>
 
@@ -292,32 +806,7 @@
         </div>
     </div>
 
-    <!-- MODAL: Mikrotik Device (add/edit) -->
-    <div id="device-modal" class="modal-overlay" hidden>
-        <div class="modal">
-            <h3 id="device-modal-title">Novo Mikrotik</h3>
-            <form id="device-form">
-                <input type="hidden" name="id">
-                <label>Nome da RB</label>
-                <input type="text" name="name" required>
-                <label>IP da RB</label>
-                <input type="text" name="ip" required>
-                <label>Porta SSH</label>
-                <input type="number" name="port" value="22" required>
-                <label>Usuário</label>
-                <input type="text" name="username" required>
-                <label id="device-password-label">Senha</label>
-                <input type="password" name="password" autocomplete="new-password">
-                <small id="device-password-hint" class="hint" hidden>Deixe em branco para manter a senha atual.</small>
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('device-modal')">Cancelar</button>
-                    <button type="submit" class="btn btn-primary">Salvar</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- MODAL: Licença (Criar / Editar) -->
+    <!-- MODAL: Licença (Criar / Editar) - ORIGINAL PRESERVADO -->
     <div id="license-modal" class="modal-overlay" hidden>
         <div class="modal" style="width: 480px;">
             <h3 id="license-modal-title">Nova Licença</h3>
@@ -375,46 +864,6 @@
         </div>
     </div>
 
-    <!-- MODAL: Histórico de Comunicações da Licença -->
-    <div id="license-logs-modal" class="modal-overlay" hidden>
-        <div class="modal modal-wide" style="width: 850px; max-width: 95vw; max-height: 90vh; display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-                <div>
-                    <h3 id="license-logs-title" style="margin: 0 0 4px 0;">Últimas Comunicações</h3>
-                    <div id="license-logs-subtitle" style="font-size: 13px; color: #666;"></div>
-                </div>
-                <div style="display: flex; gap: 8px;">
-                    <button type="button" class="btn btn-info btn-sm" onclick="refreshLicenseLogs()">Atualizar</button>
-                    <button type="button" class="btn btn-danger btn-sm" onclick="clearCurrentLicenseLogs()">Limpar Histórico</button>
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('license-logs-modal')">Fechar</button>
-                </div>
-            </div>
-
-            <div style="overflow-y: auto; flex: 1; max-height: 60vh; border: 1px solid #e0e0e0; border-radius: 4px;">
-                <table style="margin-top: 0; min-width: 100%;">
-                    <thead>
-                        <tr style="position: sticky; top: 0; background: #007bff; z-index: 2;">
-                            <th style="padding: 8px;">Data / Hora</th>
-                            <th style="padding: 8px;">IP Origem</th>
-                            <th style="padding: 8px;">Hostname / Domínio</th>
-                            <th style="padding: 8px;">Versão</th>
-                            <th style="padding: 8px;">Status</th>
-                            <th style="padding: 8px;">Mensagem / Resposta</th>
-                        </tr>
-                    </thead>
-                    <tbody id="license-logs-tbody">
-                        <tr><td colspan="6" style="text-align: center; color: #888;">Carregando histórico...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; font-size: 12px; color: #777;">
-                <span id="license-logs-count">Mostrando últimos registros</span>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal('license-logs-modal')">Fechar</button>
-            </div>
-        </div>
-    </div>
-
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v=4"></script>
 </body>
 </html>

@@ -23,8 +23,6 @@ def _license_snapshot(row) -> dict:
     else:
         effective_status = "ACTIVE"
 
-    is_online = stream_manager.is_online(row["license_key"])
-
     return {
         "id": row["id"],
         "client_name": row["client_name"],
@@ -32,7 +30,7 @@ def _license_snapshot(row) -> dict:
         "status": raw_status,
         "effective_status": effective_status,
         "is_expired": expired,
-        "is_online": is_online,
+        "is_online": stream_manager.is_online(row["license_key"]),
         "allowed_domain": row["allowed_domain"] or "",
         "expires_at": row["expires_at"] or "",
         "notes": row["notes"] or "",
@@ -42,13 +40,11 @@ def _license_snapshot(row) -> dict:
         "last_ip": row["last_ip"] or "",
         "last_hostname": row["last_hostname"] or "",
         "last_version": row["last_version"] or "",
-        "total_checks": row["total_checks"] or 0,
     }
 
 
 @router.get("")
 async def list_licenses():
-    """Lists all software licenses."""
     conn = get_db()
     try:
         c = conn.cursor()
@@ -61,13 +57,11 @@ async def list_licenses():
 
 @router.get("/generate-key")
 async def get_random_key():
-    """Utility endpoint to generate a fresh license key string."""
     return {"license_key": generate_license_key()}
 
 
 @router.post("")
 async def create_license(payload: dict = Body(...)):
-    """Creates a new software license."""
     client_name = (payload.get("client_name") or "").strip()
     license_key = (payload.get("license_key") or "").strip().upper()
     status = (payload.get("status") or "ACTIVE").strip().upper()
@@ -106,24 +100,8 @@ async def create_license(payload: dict = Body(...)):
         conn.close()
 
 
-@router.get("/{license_id}")
-async def get_license(license_id: int):
-    """Gets details for a single license."""
-    conn = get_db()
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM licenses WHERE id = ?", (license_id,))
-        row = c.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Licença não encontrada.")
-        return _license_snapshot(row)
-    finally:
-        conn.close()
-
-
 @router.put("/{license_id}")
 async def update_license(license_id: int, payload: dict = Body(...)):
-    """Updates an existing license."""
     client_name = (payload.get("client_name") or "").strip()
     license_key = (payload.get("license_key") or "").strip().upper()
     status = (payload.get("status") or "ACTIVE").strip().upper()
@@ -133,10 +111,8 @@ async def update_license(license_id: int, payload: dict = Body(...)):
 
     if not client_name:
         raise HTTPException(status_code=400, detail="O nome do cliente/aplicação é obrigatório.")
-
     if not license_key:
         raise HTTPException(status_code=400, detail="A chave de licença não pode ser vazia.")
-
     if status not in ("ACTIVE", "BLOCKED"):
         status = "ACTIVE"
 
@@ -149,7 +125,7 @@ async def update_license(license_id: int, payload: dict = Body(...)):
 
         c.execute(
             """
-            UPDATE licenses 
+            UPDATE licenses
             SET client_name = ?, license_key = ?, status = ?, allowed_domain = ?, expires_at = ?, notes = ?
             WHERE id = ?
             """,
@@ -157,7 +133,6 @@ async def update_license(license_id: int, payload: dict = Body(...)):
         )
         conn.commit()
 
-        # Instant real-time push to connected clients
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         await stream_manager.broadcast(
             license_key,
@@ -177,7 +152,6 @@ async def update_license(license_id: int, payload: dict = Body(...)):
 
 @router.post("/{license_id}/toggle")
 async def toggle_license_status(license_id: int):
-    """Toggles license status between ACTIVE and BLOCKED."""
     conn = get_db()
     try:
         c = conn.cursor()
@@ -190,21 +164,10 @@ async def toggle_license_status(license_id: int):
         new_status = "BLOCKED" if current_status == "ACTIVE" else "ACTIVE"
 
         c.execute("UPDATE licenses SET status = ? WHERE id = ?", (new_status, license_id))
-        
-        # Log the admin status change
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        action_msg = "Licença BLOQUEADA pelo administrador." if new_status == "BLOCKED" else "Licença DESBLOQUEADA pelo administrador."
-        c.execute(
-            """
-            INSERT INTO license_logs 
-            (license_id, license_key, timestamp, ip, hostname, app_version, status_returned, message, details)
-            VALUES (?, ?, ?, 'painel', 'admin', 'painel', ?, ?, 'Alteração manual no painel')
-            """,
-            (license_id, lic["license_key"], now_str, new_status, action_msg),
-        )
         conn.commit()
 
-        # Instant real-time push to connected clients!
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        action_msg = "Licença bloqueada pelo administrador." if new_status == "BLOCKED" else "Licença liberada pelo administrador."
         await stream_manager.broadcast(
             lic["license_key"],
             {
@@ -216,105 +179,17 @@ async def toggle_license_status(license_id: int):
                 "server_time": now_str,
             },
         )
-
         return {"ok": True, "new_status": new_status, "client_name": lic["client_name"]}
-    finally:
-        conn.close()
-
-
-@router.post("/{license_id}/regenerate-key")
-async def regenerate_license_key_endpoint(license_id: int):
-    """Generates a new key for this license."""
-    new_key = generate_license_key()
-    conn = get_db()
-    try:
-        c = conn.cursor()
-        c.execute("SELECT id, client_name, license_key FROM licenses WHERE id = ?", (license_id,))
-        lic = c.fetchone()
-        if not lic:
-            raise HTTPException(status_code=404, detail="Licença não encontrada.")
-
-        old_key = lic["license_key"]
-        c.execute("UPDATE licenses SET license_key = ? WHERE id = ?", (new_key, license_id))
-        
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        c.execute(
-            """
-            INSERT INTO license_logs 
-            (license_id, license_key, timestamp, ip, hostname, app_version, status_returned, message, details)
-            VALUES (?, ?, ?, 'painel', 'admin', 'painel', 'KEY_ROTATED', 'Chave rotacionada no painel', ?)
-            """,
-            (license_id, new_key, now_str, f"Antiga chave: {old_key}"),
-        )
-        conn.commit()
-        return {"ok": True, "new_key": new_key}
     finally:
         conn.close()
 
 
 @router.delete("/{license_id}")
 async def delete_license(license_id: int):
-    """Deletes a license and its logs."""
     conn = get_db()
     try:
         c = conn.cursor()
-        c.execute("DELETE FROM license_logs WHERE license_id = ?", (license_id,))
         c.execute("DELETE FROM licenses WHERE id = ?", (license_id,))
-        conn.commit()
-        return {"ok": True}
-    finally:
-        conn.close()
-
-
-@router.get("/{license_id}/logs")
-async def get_license_logs(license_id: int, limit: int = 100):
-    """Retrieves recent communication logs for a specific license."""
-    conn = get_db()
-    try:
-        c = conn.cursor()
-        c.execute("SELECT * FROM licenses WHERE id = ?", (license_id,))
-        lic = c.fetchone()
-        if not lic:
-            raise HTTPException(status_code=404, detail="Licença não encontrada.")
-
-        c.execute(
-            """
-            SELECT * FROM license_logs 
-            WHERE license_id = ? 
-            ORDER BY id DESC 
-            LIMIT ?
-            """,
-            (license_id, min(limit, 300)),
-        )
-        logs = c.fetchall()
-        return {
-            "license": _license_snapshot(lic),
-            "logs": [
-                {
-                    "id": row["id"],
-                    "timestamp": row["timestamp"],
-                    "relative_time": format_relative_time(row["timestamp"]),
-                    "ip": row["ip"] or "-",
-                    "hostname": row["hostname"] or "-",
-                    "app_version": row["app_version"] or "-",
-                    "status_returned": row["status_returned"],
-                    "message": row["message"] or "",
-                    "details": row["details"] or "",
-                }
-                for row in logs
-            ],
-        }
-    finally:
-        conn.close()
-
-
-@router.delete("/{license_id}/logs")
-async def clear_license_logs(license_id: int):
-    """Clears communication history for this license."""
-    conn = get_db()
-    try:
-        c = conn.cursor()
-        c.execute("DELETE FROM license_logs WHERE license_id = ?", (license_id,))
         conn.commit()
         return {"ok": True}
     finally:

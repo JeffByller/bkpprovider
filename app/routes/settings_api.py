@@ -7,8 +7,13 @@ from app.db import get_all_settings, set_setting
 router = APIRouter(prefix="/api/settings", dependencies=[Depends(require_auth)])
 
 INT_FIELDS = [
-    "ping_interval_seconds", "fail_threshold", "packet_loss_window",
-    "packet_loss_threshold_pct", "backup_hour", "backup_minute", "backup_retention",
+    "ping_interval_seconds",
+    "fail_threshold",
+    "snmp_interval_seconds",
+    "metrics_retention_days",
+    "backup_hour",
+    "backup_minute",
+    "backup_retention",
 ]
 
 
